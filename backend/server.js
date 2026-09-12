@@ -4,6 +4,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import connectMongoDB from "./config/mongodb.js";
 import storeRoutes from "./routes/storeRoutes.js";
+import productProfitabilityRoutes from "./routes/productProfitabilityRoutes.js";
+import syncRoutes from "./routes/syncRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,13 +24,22 @@ app.get("/api/health", (req, res) => {
         success: true,
         message: "MarginMind backend is running",
     });
-});
+}); 
+                                                                                                       
+app.use(
+    "/api/product-profitability",
+    productProfitabilityRoutes
+);
+
+// ---------------------------------------------------------------------------
+// Sync routes
+// ---------------------------------------------------------------------------
+app.use("/api/sync", syncRoutes);
 
 // ---------------------------------------------------------------------------
 // Store routes
 // ---------------------------------------------------------------------------
 app.use("/api/stores", storeRoutes);
-
 // ---------------------------------------------------------------------------
 // 404 catch-all for undefined routes
 // ---------------------------------------------------------------------------

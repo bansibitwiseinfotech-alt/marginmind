@@ -20,7 +20,7 @@ const storeSchema = new mongoose.Schema(
         },
         expiresAt: {
             type: Date,
-            default: null,
+            default: null,  
         },
         name: {
             type: String,
@@ -64,6 +64,27 @@ const storeSchema = new mongoose.Schema(
         isActive: {
             type: Boolean,
             default: true,
+        },
+        syncStatus: {
+            type: String,
+            enum: ["idle", "syncing", "success", "failed", "not_started"],
+            default: "not_started",
+        },
+        lastSyncedAt: {
+            type: Date,
+            default: null,
+        },
+        lastSyncStartedAt: {
+            type: Date,
+            default: null,
+        },
+        lastSyncError: {
+            type: String,
+            default: "",
+        },
+        productsSynced: {
+            type: Number,
+            default: 0,
         },
         installedAt: {
             type: Date,

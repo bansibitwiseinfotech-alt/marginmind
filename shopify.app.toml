@@ -7,7 +7,7 @@ name = "MarginMind"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products,write_products,read_orders,read_customers,read_discounts,read_inventory,read_locations,write_metaobjects,write_metaobject_definitions"
+scopes = "read_products,write_products,read_orders,read_customers,read_discounts,read_inventory,read_locations,read_returns,write_metaobjects,write_metaobject_definitions"
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
@@ -43,6 +43,14 @@ api_version = "2026-10"
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/returns/create"
+  topics = [ "returns/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/refunds/create"
+  topics = [ "refunds/create" ]
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]

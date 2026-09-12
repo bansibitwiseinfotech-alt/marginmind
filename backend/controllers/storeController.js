@@ -11,7 +11,7 @@ export const normalizeShopDomain = (shop) => {
         clean = `${clean}.myshopify.com`;
     }
     return clean;
-};
+};   
 
 /**
  * Fetch real Shopify store profile from Admin GraphQL API using the access token

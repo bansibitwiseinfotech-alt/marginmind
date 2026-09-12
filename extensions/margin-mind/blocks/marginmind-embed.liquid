@@ -1,0 +1,16 @@
+<div
+  id="marginmind-storefront"
+  data-shop="{{ shop.permanent_domain }}"
+  data-product-id="{{ product.id | default: '' }}"
+>
+</div>
+
+<script src="{{ 'marginmind.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "MarginMind",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
