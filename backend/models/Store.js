@@ -86,6 +86,44 @@ const storeSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        costConfig: {
+            enabled: {
+                type: Boolean,
+                default: false,
+            },
+            productCost: {
+                type: Number,
+                default: 0,
+            },
+            fulfillmentCost: {
+                type: Number,
+                default: 0,
+            },
+            shippingCost: {
+                type: Number,
+                default: 0,
+            },
+            paymentFeeRate: {
+                type: Number,
+                default: 0,
+            },
+            paymentFeeFlat: {
+                type: Number,
+                default: 0,
+            },
+            advertisingCostRate: {
+                type: Number,
+                default: 0,
+            },
+            advertisingCostFlat: {
+                type: Number,
+                default: 0,
+            },
+            taxRate: {
+                type: Number,
+                default: 0,
+            },
+        },
         installedAt: {
             type: Date,
             default: Date.now,

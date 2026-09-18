@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useRouteError, isRouteErrorResponse } from "react-router";
+import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
@@ -25,40 +25,31 @@ export default function App() {
           <s-link href="/app/product-profitability">
             Product Profitability
           </s-link>
+          <s-link href="/app/order-profit-calculator">           
+            Order Profitability
+          </s-link>
+          <s-link href="/app/customer-profitability">
+  Customer Profitability
+</s-link>    
+          <s-link href="/app/discount-impact">
+  Discount Impact
+</s-link>
+          <s-link href="/app/shipping-cost">
+  Shipping Cost Analysis
+</s-link>
+          <s-link href="/app/profit-leak-detector">
+  Profit Leak Detector
+</s-link>
         </s-app-nav>
         <Outlet />
       </PolarisAppProvider>
-    </AppProvider>
+    </AppProvider>   
   );
 }
 
-// Custom Production-Grade Error Boundary for MarginMind
+// Shopify App Error Boundary: handles OAuth redirects, session refreshes, and App Bridge authentication
 export function ErrorBoundary() {
-  const error = useRouteError();
-
-  // If this is a Shopify OAuth redirect response thrown by authenticate.admin,  
-  // let Shopify's boundary handle it so iframe redirects complete properly
-  if (isRouteErrorResponse(error) && error.status >= 300 && error.status < 400) {
-    return boundary.error(error);
-  }
-
-  // Log error details strictly server-side (never exposed to client)
-  if (typeof window === "undefined") {
-    console.error("[MarginMind] Server route error:", error?.message || error); 
-  }
-
-  return (
-    <s-page heading="MarginMind">         
-      <s-section heading="Something went wrong">
-        <s-banner tone="critical">
-          MarginMind could not load this page.
-        </s-banner>
-        <s-paragraph style={{ marginTop: "16px" }}>
-          Please try refreshing the page. If the problem persists, reopen the app from your Shopify Admin.
-        </s-paragraph>
-      </s-section>
-    </s-page>
-  );
+  return boundary.error(useRouteError());
 }
 
 export const headers = (headersArgs) => {

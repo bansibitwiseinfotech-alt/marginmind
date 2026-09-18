@@ -1,4 +1,5 @@
 import Store from "../models/Store.js";
+import { summarizeOrderCostMetrics } from "../services/costManagement.service.js";
 
 const SHOPIFY_API_VERSION = "2026-07";
 
@@ -546,53 +547,59 @@ export const syncOrders = async (req, res) => {
       { first: 50, after: null }
     );
 
-    const orders = (data?.orders?.nodes || []).map((order) => ({
-      id: order.id,
-      name: order.name,
-      createdAt: order.createdAt,
-      processedAt: order.processedAt,
-      financialStatus: order.displayFinancialStatus,
-      fulfillmentStatus: order.displayFulfillmentStatus,
-      totalPrice: order.totalPriceSet?.shopMoney?.amount || null,
-      subtotalPrice: order.subtotalPriceSet?.shopMoney?.amount || null,
-      tax: order.totalTaxSet?.shopMoney?.amount || null,
-      shippingPrice: order.totalShippingPriceSet?.shopMoney?.amount || null,
-      discounts: order.totalDiscountsSet?.shopMoney?.amount || null,
-      customer: order.customer ? {
-        id: order.customer.id,
-        firstName: order.customer.firstName,
-        lastName: order.customer.lastName,
-        email: order.customer.email,
-      } : null,
-      shippingAddress: order.shippingAddress ? {
-        firstName: order.shippingAddress.firstName,
-        lastName: order.shippingAddress.lastName,
-        city: order.shippingAddress.city,
-        country: order.shippingAddress.country,
-        zip: order.shippingAddress.zip,
-      } : null,
-      lineItems: (order.lineItems?.nodes || []).map((item) => ({
-        id: item.id,
-        title: item.title,
-        quantity: item.quantity,
-        variantId: item.variant?.id || null,
-        variantTitle: item.variant?.title || null,
-        sku: item.variant?.sku || null,
-        price: item.variant?.price || null,
-        originalTotal: item.originalTotalSet?.shopMoney?.amount || null,
-        discountedTotal: item.discountedTotalSet?.shopMoney?.amount || null,
-      })),
-      shippingLines: (order.shippingLines?.nodes || []).map((line) => ({
-        id: line.id,
-        title: line.title,
-        price: line.originalPriceSet?.shopMoney?.amount || null,
-      })),
-      discountsApplied: (order.discountApplications?.nodes || []).map((discount) => ({
-        code: discount.code,
-        amount: discount.value?.amount || null,
-        type: discount.targetType,
-      })),
-    }));
+    const orders = (data?.orders?.nodes || []).map((order) => {
+      const costSummary = summarizeOrderCostMetrics(order);
+
+      return {
+        id: order.id,
+        name: order.name,
+        createdAt: order.createdAt,
+        processedAt: order.processedAt,
+        financialStatus: order.displayFinancialStatus,
+        fulfillmentStatus: order.displayFulfillmentStatus,
+        totalPrice: order.totalPriceSet?.shopMoney?.amount || null,
+        subtotalPrice: order.subtotalPriceSet?.shopMoney?.amount || null,
+        tax: order.totalTaxSet?.shopMoney?.amount || null,
+        shippingPrice: order.totalShippingPriceSet?.shopMoney?.amount || null,
+        discounts: order.totalDiscountsSet?.shopMoney?.amount || null,
+        customer: order.customer ? {
+          id: order.customer.id,
+          firstName: order.customer.firstName,
+          lastName: order.customer.lastName,
+          email: order.customer.email,
+        } : null,
+        shippingAddress: order.shippingAddress ? {
+          firstName: order.shippingAddress.firstName,
+          lastName: order.shippingAddress.lastName,
+          city: order.shippingAddress.city,
+          country: order.shippingAddress.country,
+          zip: order.shippingAddress.zip,
+        } : null,
+        lineItems: (order.lineItems?.nodes || []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          quantity: item.quantity,
+          variantId: item.variant?.id || null,
+          variantTitle: item.variant?.title || null,
+          sku: item.variant?.sku || null,
+          price: item.variant?.price || null,
+          originalTotal: item.originalTotalSet?.shopMoney?.amount || null,
+          discountedTotal: item.discountedTotalSet?.shopMoney?.amount || null,
+        })),
+        shippingLines: (order.shippingLines?.nodes || []).map((line) => ({
+          id: line.id,
+          title: line.title,
+          price: line.originalPriceSet?.shopMoney?.amount || null,
+        })),
+        discountsApplied: (order.discountApplications?.nodes || []).map((discount) => ({
+          code: discount.code,
+          amount: discount.value?.amount || null,
+          percentage: discount.value?.percentage || null,
+          type: discount.targetType,
+        })),
+        costSummary,
+      };
+    });
 
     if (store) {
       store.syncStatus = "success";
@@ -970,6 +977,105 @@ export const syncRefunds = async (req, res) => {
   }
 };
 
+export const syncOrderCosts = async (req, res) => {
+  try {
+    const shop = req.verifiedShop;
+    const store = await Store.findOne({ shop });
+    const accessToken =
+      store?.accessToken ||
+      req.headers["x-shopify-access-token"] ||
+      req.headers["x-shopify-access-token"];
+
+    if (!store && !accessToken) {
+      return res.status(404).json({
+        success: false,
+        message: "Store not found and no Shopify access token was supplied",
+      });
+    }
+
+    if (!accessToken) {
+      return res.status(400).json({ success: false, message: "Shopify access token missing" });
+    }
+
+    if (store) {
+      store.syncStatus = "syncing";
+      store.lastSyncStartedAt = new Date();
+      store.lastSyncError = "";
+      await store.save();
+    }
+
+    const data = await shopifyGraphQL(
+      normalizeShop(shop),
+      accessToken,
+      ORDERS_QUERY,
+      { first: 50, after: null }
+    );
+
+    const orders = (data?.orders?.nodes || []).map((order) => {
+      const costSummary = summarizeOrderCostMetrics(order);
+      return {
+        id: order.id,
+        name: order.name,
+        createdAt: order.createdAt,
+        currency: costSummary.currency,
+        totalRevenue: costSummary.totalRevenue,
+        subtotal: costSummary.subtotal,
+        taxAmount: costSummary.taxAmount,
+        shippingCost: costSummary.shippingCost,
+        discountAmount: costSummary.discountAmount,
+        refundAmount: costSummary.refundAmount,
+        returnCount: costSummary.returnCount,
+        shippingBreakdown: costSummary.shippingBreakdown,
+        discountBreakdown: costSummary.discountBreakdown,
+      };
+    });
+
+    const totals = orders.reduce(
+      (accumulator, order) => ({
+        totalRevenue: accumulator.totalRevenue + order.totalRevenue,
+        shippingCost: accumulator.shippingCost + order.shippingCost,
+        discountAmount: accumulator.discountAmount + order.discountAmount,
+        refundAmount: accumulator.refundAmount + order.refundAmount,
+        returnCount: accumulator.returnCount + order.returnCount,
+      }),
+      { totalRevenue: 0, shippingCost: 0, discountAmount: 0, refundAmount: 0, returnCount: 0 }
+    );
+
+    if (store) {
+      store.syncStatus = "success";
+      store.lastSyncedAt = new Date();
+      store.productsSynced = orders.length;
+      store.lastSyncError = "";
+      await store.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Order cost sync completed successfully",
+      shop,
+      syncedAt: store?.lastSyncedAt || new Date(),
+      totalOrderCosts: orders.length,
+      totals,
+      orders,
+    });
+  } catch (error) {
+    if (req.verifiedShop) {
+      const store = await Store.findOne({ shop: req.verifiedShop });
+      if (store) {
+        store.syncStatus = "failed";
+        store.lastSyncError = error.message || "Order cost sync failed";
+        await store.save();
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Order cost sync failed",
+      error: error.message,
+    });
+  }
+};
+
 export const syncAll = async (req, res) => {
   try {
     const shop = req.verifiedShop;
@@ -1001,6 +1107,31 @@ export const syncAll = async (req, res) => {
     }
 
     const results = {};
+
+    const orderCostData = await shopifyGraphQL(
+      normalizeShop(shop),
+      accessToken,
+      ORDERS_QUERY,
+      { first: 50, after: null }
+    );
+    const orderCosts = (orderCostData?.orders?.nodes || []).map((order) => {
+      const summary = summarizeOrderCostMetrics(order);
+      return {
+        id: order.id,
+        name: order.name,
+        totalRevenue: summary.totalRevenue,
+        shippingCost: summary.shippingCost,
+        discountAmount: summary.discountAmount,
+        refundAmount: summary.refundAmount,
+        returnCount: summary.returnCount,
+      };
+    });
+    results.orderCosts = {
+      total: orderCosts.length,
+      shippingTotal: orderCosts.reduce((sum, order) => sum + order.shippingCost, 0),
+      discountTotal: orderCosts.reduce((sum, order) => sum + order.discountAmount, 0),
+      refundTotal: orderCosts.reduce((sum, order) => sum + order.refundAmount, 0),
+    };
 
     const productData = await shopifyGraphQL(
       normalizeShop(shop),

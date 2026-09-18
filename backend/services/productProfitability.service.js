@@ -1,4 +1,5 @@
 import Store from "../models/Store.js";
+import { getStoreWithActiveToken } from "../utils/storeHelper.js";
 
 const SHOPIFY_API_VERSION = "2026-07";
 
@@ -163,9 +164,7 @@ export async function getProductProfitability({
      * MongoDB is used only for the store/access token.
      * Shopify remains the source of truth for products.
      */
-    const store = await Store.findOne({
-        shop: normalizedShop,
-    });
+    const store = await getStoreWithActiveToken(normalizedShop);
 
     if (!store) {
         throw new Error("Store not found");

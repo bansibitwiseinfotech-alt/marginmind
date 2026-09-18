@@ -8,6 +8,7 @@ import {
   syncCustomers,
   syncReturns,
   syncRefunds,
+  syncOrderCosts,
   syncAll,
   getSyncStatus,
 } from "../controllers/syncController.js";
@@ -22,6 +23,7 @@ router.post("/discounts", validateInternalRequest, syncDiscounts);
 router.post("/customers", validateInternalRequest, syncCustomers);
 router.post("/returns", validateInternalRequest, syncReturns);
 router.post("/refunds", validateInternalRequest, syncRefunds);
+router.post("/order-costs", validateInternalRequest, syncOrderCosts);
 router.post("/all", validateInternalRequest, syncAll);
 
 export default router;

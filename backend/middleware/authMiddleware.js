@@ -1,4 +1,44 @@
 import crypto from "crypto";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(__dirname, "../../.env");
+
+dotenv.config({ path: envPath });
+
+const getInternalSecret = () => {
+  const envSecret = process.env.INTERNAL_API_SECRET;
+  if (envSecret && envSecret.trim()) return envSecret.trim();
+
+  const envResult = dotenv.config({ path: envPath });
+  const parsedSecret = envResult?.parsed?.INTERNAL_API_SECRET;
+
+  return parsedSecret && parsedSecret.trim() ? parsedSecret.trim() : "";
+};
+
+const getRequestSecret = (req) => {
+  const headerSecret = req.headers["x-internal-secret"];
+  const authHeader = req.headers.authorization;
+
+  const normalizedHeaderSecret = Array.isArray(headerSecret)
+    ? headerSecret[0]
+    : headerSecret;
+
+  if (normalizedHeaderSecret && String(normalizedHeaderSecret).trim()) {
+    return String(normalizedHeaderSecret).trim();
+  }
+
+  if (typeof authHeader === "string") {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]?.trim()) {
+      return match[1].trim();
+    }
+  }
+
+  return "";
+};
 
 /**
  * Validates internal server-to-server requests from Shopify app routes to Express backend.
@@ -6,8 +46,8 @@ import crypto from "crypto";
  * Normalizes and sets req.verifiedShop.
  */
 export const validateInternalRequest = (req, res, next) => {
-  const secret = req.headers["x-internal-secret"];
-  const expectedSecret = process.env.INTERNAL_API_SECRET;
+  const secret = getRequestSecret(req);
+  const expectedSecret = getInternalSecret();
   const shop = req.headers["x-shopify-shop-domain"];
 
   if (!secret || !expectedSecret) {

@@ -4,6 +4,7 @@ import {
   useSearchParams,
   useNavigation,
   useRevalidator,
+  useRouteError,
 } from "react-router";
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
@@ -53,23 +54,22 @@ export const loader = async ({ request }) => {
     `&search=${encodeURIComponent(search)}` +
     `&after=${encodeURIComponent(after)}`;
 
-  let response;
+  let data = null;
+  let fetchError = null;
+
   try {
-    response = await fetch(apiUrl, {
+    const response = await fetch(apiUrl, {
       method: "GET",
       headers,
     });
+    const json = await response.json();
+    if (response.ok && json.success) {
+      data = json.data;
+    } else {
+      fetchError = json?.message || "Failed to load product profitability";
+    }
   } catch (networkErr) {
-    throw new Response("Unable to reach MarginMind backend", { status: 502 });
-  }
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Response(
-      data?.message || "Failed to load product profitability",
-      { status: response.status }
-    );
+    fetchError = "Unable to reach MarginMind backend: " + networkErr.message;
   }
 
   let syncStatus = {
@@ -112,10 +112,24 @@ export const loader = async ({ request }) => {
   }
 
   return {
-    ...data.data,
+    products: data?.products || [],
+    summary: data?.summary || {
+      totalProducts: 0,
+      productsOnPage: 0,
+      variantsOnPage: 0,
+      profitableVariants: 0,
+      lowMarginVariants: 0,
+      lossMakingVariants: 0,
+      variantsWithCost: 0,
+      variantsWithoutCost: 0,
+      averageUnitMargin: null,
+    },
+    pageInfo: data?.pageInfo || null,
+    totalProducts: data?.totalProducts || 0,
     search,
     currentShop: session.shop,
     syncStatus,
+    error: fetchError,
   };
 };
 
@@ -215,6 +229,7 @@ export default function ProductProfitability() {
       lastSyncError: "",
       productsSynced: 0,
     },
+    error: initialError,
   } = useLoaderData();
 
   const navigation = useNavigation();
@@ -565,15 +580,7 @@ export default function ProductProfitability() {
           <Text
             variant="bodyMd"
             fontWeight="bold"
-            tone={
-              item.unitProfit === null
-                ? "subdued"
-                : item.unitProfit > 0
-                ? "success"
-                : item.unitProfit < 0
-                ? "critical"
-                : undefined
-            }
+            tone={item.unitProfit === null ? "subdued" : undefined}
             as="span"
           >
             {item.unitProfit !== null
@@ -589,15 +596,7 @@ export default function ProductProfitability() {
           <Text
             variant="bodyMd"
             fontWeight="bold"
-            tone={
-              item.unitMargin === null
-                ? "subdued"
-                : item.unitMargin >= 20
-                ? "success"
-                : item.unitMargin >= 0
-                ? "caution"
-                : "critical"
-            }
+            tone={item.unitMargin === null ? "subdued" : undefined}
             as="span"
           >
             {formatPercent(item.unitMargin)}
@@ -608,7 +607,6 @@ export default function ProductProfitability() {
         <IndexTable.Cell>
           <Text
             variant="bodyMd"
-            tone={item.inventory <= 0 ? "critical" : undefined}
             fontWeight={item.inventory <= 0 ? "medium" : undefined}
             as="span"
           >
@@ -630,15 +628,18 @@ export default function ProductProfitability() {
     <Page
       title="Product Profitability"
       subtitle="See profit and margin for every Shopify product and variant. Values shown are unit economics (Selling Price − Cost)."
-      primaryAction={{
-        content: "Refresh",
-        icon: RefreshIcon,
-        onAction: handleRefresh,
-        loading: isLoading,
-      }}
+ 
       fullWidth
     >
       <BlockStack gap="400">
+        {initialError && (
+          <Banner tone="critical" title="Notice">
+            <p>{initialError}</p>
+            <Box paddingTop="200">
+              <Button onClick={handleRefresh}>Retry</Button>
+            </Box>
+          </Banner>
+        )}
         <Card padding="400">
           <InlineStack align="space-between" blockAlign="center" wrap={false}>
             <BlockStack gap="050">
@@ -749,7 +750,6 @@ export default function ProductProfitability() {
                   as="p"
                   variant="heading2xl"
                   fontWeight="bold"
-                  tone="success"
                 >
                   {summary?.profitableVariants ?? "—"}
                 </Text>
@@ -782,7 +782,6 @@ export default function ProductProfitability() {
                   as="p"
                   variant="heading2xl"
                   fontWeight="bold"
-                  tone="caution"
                 >
                   {summary?.lowMarginVariants ?? "—"}
                 </Text>
@@ -801,7 +800,7 @@ export default function ProductProfitability() {
             style={{
               cursor: "pointer",
               borderRadius: "12px",
-              outline: selectedTab === 3 ? "2px solid #d72c0d" : "none",
+              outline: selectedTab === 3 ? "2px solid #303030" : "none",
               outlineOffset: "2px",
               transition: "all 0.15s ease",
             }}
@@ -815,7 +814,6 @@ export default function ProductProfitability() {
                   as="p"
                   variant="heading2xl"
                   fontWeight="bold"
-                  tone="critical"
                 >
                   {summary?.lossMakingVariants ?? "—"}
                 </Text>
@@ -852,16 +850,6 @@ export default function ProductProfitability() {
                   as="p"
                   variant="heading2xl"
                   fontWeight="bold"
-                  tone={
-                    summary?.averageUnitMargin === null ||
-                    summary?.averageUnitMargin === undefined
-                      ? undefined
-                      : summary.averageUnitMargin >= 20
-                      ? "success"
-                      : summary.averageUnitMargin >= 0
-                      ? "caution"
-                      : "critical"
-                  }
                 >
                   {formatPercent(summary?.averageUnitMargin)}
                 </Text>
@@ -962,6 +950,31 @@ export default function ProductProfitability() {
           </Banner>
         )}*/}
       </BlockStack>
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const revalidator = useRevalidator();
+
+  return (
+    <Page title="Product Profitability" fullWidth>
+      <Card padding="500">
+        <BlockStack gap="300">
+          <Text as="h2" variant="headingMd">
+            Product Profitability
+          </Text>
+          <Banner tone="critical" title="Something went wrong">
+            <p>{error?.message || "Failed to load product profitability data."}</p>
+          </Banner>
+          <InlineStack gap="200">
+            <Button variant="primary" onClick={() => revalidator.revalidate()}>
+              Retry
+            </Button>
+          </InlineStack>
+        </BlockStack>
+      </Card>
     </Page>
   );
 }

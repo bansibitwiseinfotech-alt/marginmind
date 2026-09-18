@@ -6,6 +6,12 @@ import connectMongoDB from "./config/mongodb.js";
 import storeRoutes from "./routes/storeRoutes.js";
 import productProfitabilityRoutes from "./routes/productProfitabilityRoutes.js";
 import syncRoutes from "./routes/syncRoutes.js";
+import costRoutes from "./routes/costRoutes.js";
+import orderProfitabilityRoutes from "./routes/orderProfitabilityRoutes.js";
+import customerProfitabilityRoutes from "./routes/customerProfitabilityRoutes.js";
+import discountImpactRoutes from "./routes/discountImpact.routes.js";
+import shippingCostRoutes from "./routes/shippingCost.routes.js";
+import profitLeakRoutes from "./routes/profitLeakRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,12 +30,27 @@ app.get("/api/health", (req, res) => {
         success: true,
         message: "MarginMind backend is running",
     });
-}); 
-                                                                                                       
+});
+       
 app.use(
     "/api/product-profitability",
     productProfitabilityRoutes
 );
+app.use(
+    "/api/order-profitability",
+    orderProfitabilityRoutes
+);
+app.use(
+    "/api/customer-profitability",
+    customerProfitabilityRoutes
+);
+app.use("/api/shipping-cost", shippingCostRoutes);
+app.use("/api/discount-impact", discountImpactRoutes);
+app.use("/api/profit-leaks", profitLeakRoutes);
+// ---------------------------------------------------------------------------
+// Cost management routes
+// ---------------------------------------------------------------------------
+app.use("/api/costs", costRoutes);
 
 // ---------------------------------------------------------------------------
 // Sync routes
