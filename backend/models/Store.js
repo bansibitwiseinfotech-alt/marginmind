@@ -119,6 +119,10 @@ const storeSchema = new mongoose.Schema(
                 type: Number,
                 default: 0,
             },
+            targetMargin: {
+                type: Number,
+                default: 20,
+            },
             taxRate: {
                 type: Number,
                 default: 0,

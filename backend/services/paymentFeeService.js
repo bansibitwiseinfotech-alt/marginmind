@@ -8,9 +8,6 @@
 
 import { toNumber, roundMoney } from "../utils/profitCalculation.js";
 
-const DEFAULT_ESTIMATED_FEE_PERCENT = 2.9; // 2.9%
-const DEFAULT_ESTIMATED_FIXED_FEE = 0.30; // $0.30
-
 /**
  * Resolves payment processing fee for an order.
  *
@@ -56,9 +53,11 @@ export function resolvePaymentFee(order, storeCostConfig = null) {
     }
 
     // 2. Check merchant-configured payment fee rate from Store
-    const configuredRate = storeCostConfig?.paymentFeePercent != null
-        ? toNumber(storeCostConfig.paymentFeePercent)
-        : null;
+    const configuredRate = storeCostConfig?.paymentFeeRate != null
+        ? toNumber(storeCostConfig.paymentFeeRate)
+        : storeCostConfig?.paymentFeePercent != null
+            ? toNumber(storeCostConfig.paymentFeePercent) / 100
+            : null;
 
     const totalOrderAmount = toNumber(
         order?.totalPriceSet?.shopMoney?.amount ||
@@ -66,32 +65,19 @@ export function resolvePaymentFee(order, storeCostConfig = null) {
         0
     );
 
-    if (configuredRate !== null && configuredRate > 0) {
-        const estimatedFee = roundMoney((totalOrderAmount * (configuredRate / 100)));
+    if (configuredRate !== null && configuredRate >= 0) {
+        const estimatedFee = roundMoney(totalOrderAmount * configuredRate);
         return {
             fee: estimatedFee,
             isEstimated: true,
             gateway: gatewayName,
-            details: `Estimated using merchant configured rate (${configuredRate}%)`,
-        };
-    }
-
-    // 3. Standard fallback estimate (2.9% + $0.30)
-    if (totalOrderAmount > 0) {
-        const standardFee = roundMoney(
-            (totalOrderAmount * (DEFAULT_ESTIMATED_FEE_PERCENT / 100)) + DEFAULT_ESTIMATED_FIXED_FEE
-        );
-        return {
-            fee: standardFee,
-            isEstimated: true,
-            gateway: gatewayName,
-            details: `Estimated using standard benchmark (${DEFAULT_ESTIMATED_FEE_PERCENT}% + $${DEFAULT_ESTIMATED_FIXED_FEE})`,
+            details: `Estimated using merchant configured rate (${(configuredRate * 100).toFixed(2)}%)`,
         };
     }
 
     return {
-        fee: 0,
-        isEstimated: true,
+        fee: null,
+        isEstimated: false,
         gateway: gatewayName,
         details: "No fee data available",
     };

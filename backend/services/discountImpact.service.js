@@ -83,6 +83,7 @@ async function getDiscountImpact(input = {}) {
         endCursor: null,
     };
     let totalOrders = 0;
+    let currency = null;
 
     if (Array.isArray(input)) {
         orders = input;
@@ -105,6 +106,8 @@ async function getDiscountImpact(input = {}) {
             throw new Error("Shop domain or orders array is required");
         }
     }
+
+    currency = orders.find((order) => order?.currency)?.currency || null;
 
     const discountMap = new Map();
     const uniqueOrdersWithDiscounts = new Set();
@@ -238,7 +241,7 @@ async function getDiscountImpact(input = {}) {
 
         const profitImpact = (profitAfter != null && profitBefore != null)
             ? roundMoney(profitAfter - profitBefore)
-            : roundMoney(-discountAmount);
+            : null;
 
         const marginImpact = (marginBefore != null && marginAfter != null)
             ? Number((marginAfter - marginBefore).toFixed(2))
@@ -276,8 +279,14 @@ async function getDiscountImpact(input = {}) {
     // Sort by total discount amount descending
     discounts.sort((a, b) => b.discountAmount - a.discountAmount);
 
+    const hasIncompleteCostData = discounts.some(
+        (discount) => discount.costDataStatus === "INCOMPLETE"
+    );
+
     return {
         discounts,
+        currency,
+        profitImpactAvailable: !hasIncompleteCostData,
         totalDiscountCodes: discounts.length,
         totalOrders: uniqueOrdersWithDiscounts.size,
         totalOrdersEvaluated: orders.length,
@@ -285,7 +294,7 @@ async function getDiscountImpact(input = {}) {
             totalOrders: uniqueOrdersWithDiscounts.size,
             revenue: roundMoney(totalDiscountedRevenue),
             discountAmount: roundMoney(totalStoreDiscountAmount),
-            profit: roundMoney(totalStoreProfit),
+            profit: hasIncompleteCostData ? null : roundMoney(totalStoreProfit),
         },
         pageInfo,
     };
@@ -293,4 +302,4 @@ async function getDiscountImpact(input = {}) {
 
 export {
     getDiscountImpact,
-};
+};

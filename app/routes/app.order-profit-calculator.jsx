@@ -17,6 +17,7 @@ import {
   Box,
   Divider,
 } from "@shopify/polaris";
+import { useState } from "react";
 
 import { authenticate } from "../shopify.server";
 
@@ -136,14 +137,14 @@ export const loader = async ({ request }) => {
   };
 };
 
-function formatMoney(value, currency = "USD") {
-  if (value === null || value === undefined) {
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || !currency) {
     return "—";
   }
 
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency || "USD",
+    currency,
     maximumFractionDigits: 2,
   }).format(Number(value));
 }
@@ -1186,7 +1187,7 @@ export default function OrderProfitCalculator() {
  */
 function useStateValue(initialValue) {
   const [value, setValue] =
-    useReactState(initialValue);
+    useState(initialValue);
 
   return [value, setValue];
 }

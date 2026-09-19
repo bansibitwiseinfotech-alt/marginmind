@@ -198,6 +198,7 @@ async function getShippingCostAnalysis({
         result.orders || [],
         store?.costConfig || null
     );
+    const currency = result.orders?.find((order) => order?.currency)?.currency || null;
 
     return {
         shippingMethods: analysis.shippingMethods,
@@ -215,6 +216,7 @@ async function getShippingCostAnalysis({
         dataStatus: analysis.configuredCourierCost !== null
             ? "Merchant shipping cost and customer-paid shipping calculated"
             : "Real Shopify customer-paid shipping lines analyzed",
+        currency,
     };
 }
 

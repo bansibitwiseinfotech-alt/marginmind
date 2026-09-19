@@ -2,17 +2,20 @@
  * backend/services/productProfitLeakService.js
  *
  * Detects real product-level profit leaks from Shopify catalog data:
- * 1. Negative Unit Margin: Selling price is less than COGS.
- * 2. Critically Low Margin: Selling price leaves under 10% gross margin.
- * 3. Missing Product COGS: Flagged under DATA_QUALITY to avoid misleading 100% margins.
+ * 1. Below Cost: Selling price is less than COGS.
+ * 2. Negative Profit: Net profit is negative after configured costs.
+ * 3. Critically Low Margin: Net margin is below the configured target.
+ * 4. Missing Product COGS: Flagged under DATA_QUALITY to avoid misleading margins.
  */
 
 import { getProductProfitability } from "./productProfitability.service.js";
 import { evaluateSeverity } from "../utils/profitLeakSeverity.js";
-import { roundMoney, calculateMarginPercentage } from "../utils/profitCalculation.js";
+import { roundMoney } from "../utils/profitCalculation.js";
+import { detectProductLeak, PRODUCT_LOW_MARGIN_THRESHOLD } from "../utils/productLeakRules.js";
 
-export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
+export async function detectProductProfitLeaks(shop, storeCurrency = "USD", storeCostConfig = {}) {
     const leaks = [];
+    const targetMargin = Number(storeCostConfig?.targetMargin) || PRODUCT_LOW_MARGIN_THRESHOLD;
 
     // Fetch real Shopify products using existing service
     const productResult = await getProductProfitability({
@@ -32,8 +35,16 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
             const variantId = variant.id || product.id;
             const title = `${product.title}${variant.title && variant.title !== "Default Title" ? ` - ${variant.title}` : ""}`;
 
+            const missingCostRule = detectProductLeak({
+                price,
+                cost,
+                detectionRule: "PRODUCT_MISSING_COGS",
+                targetMargin,
+                costConfig: storeCostConfig,
+            });
+
             // Case A: Missing COGS (DATA_QUALITY)
-            if (cost === null || cost === 0) {
+            if (missingCostRule.detected) {
                 const dedupKey = `prod_missing_cost_${variantId}`;
                 const severityInfo = evaluateSeverity({
                     profitImpact: 0,
@@ -68,6 +79,7 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                         sku: variant.sku || null,
                     },
                     metadata: {
+                        targetMargin,
                         calculationBreakdown: {
                             sellingPrice: price,
                             recordedCost: "Not configured in Shopify",
@@ -79,11 +91,32 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                 continue;
             }
 
+            const belowCostRule = detectProductLeak({
+                price,
+                cost,
+                detectionRule: "PRODUCT_BELOW_COST",
+                targetMargin,
+                costConfig: storeCostConfig,
+            });
+            const negativeProfitRule = detectProductLeak({
+                price,
+                cost,
+                detectionRule: "PRODUCT_NEGATIVE_PROFIT",
+                targetMargin,
+                costConfig: storeCostConfig,
+            });
+            const lowMarginRule = detectProductLeak({
+                price,
+                cost,
+                detectionRule: "PRODUCT_LOW_MARGIN",
+                targetMargin,
+                costConfig: storeCostConfig,
+            });
             const unitLoss = cost - price;
-            const unitMargin = calculateMarginPercentage(price - cost, price);
+            const unitMargin = lowMarginRule.currentData.margin;
 
-            // Case B: Negative Margin (Selling at a loss)
-            if (unitLoss > 0) {
+            // Case B: Selling below product cost
+            if (belowCostRule.detected) {
                 // Potential impact across stock, or minimum unit loss
                 const totalStockImpact = inventory > 0 ? roundMoney(unitLoss * inventory) : roundMoney(unitLoss);
                 const dedupKey = `prod_negative_margin_${variantId}`;
@@ -100,8 +133,8 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                     shop,
                     leakType: "PRODUCT",
                     affectedArea: "Unit Economics",
-                    title: `Negative Product Margin: ${title}`,
-                    description: `Selling price (${storeCurrency} ${price.toFixed(2)}) is lower than product cost (${storeCurrency} ${cost.toFixed(2)}), creating a direct loss of ${storeCurrency} ${unitLoss.toFixed(2)} per unit sold.`,
+                    title: `Below-Cost Product Price: ${title}`,
+                    description: `Selling price (${storeCurrency} ${price.toFixed(2)}) is below product cost (${storeCurrency} ${cost.toFixed(2)}).`,
                     resourceId: variantId,
                     resourceType: "ProductVariant",
                     resourceName: title,
@@ -111,7 +144,7 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                     severity: severityInfo.severity,
                     status: "OPEN",
                     confidence: "HIGH",
-                    detectionRule: "PRODUCT_NEGATIVE_MARGIN",
+                    detectionRule: "PRODUCT_BELOW_COST",
                     evidence: {
                         productId: product.id,
                         variantId: variant.id,
@@ -119,6 +152,9 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                         costPerItem: cost,
                         unitLoss: roundMoney(unitLoss),
                         unitMarginPercent: unitMargin,
+                        netProfit: belowCostRule.currentData.unitProfit,
+                        netMarginPercent: unitMargin,
+                        referencePrice: belowCostRule.currentData.referencePrice,
                         inventoryQuantity: inventory,
                         stockExposure: totalStockImpact,
                     },
@@ -126,7 +162,7 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                         calculationBreakdown: {
                             sellingPrice: price,
                             productCost: cost,
-                            unitProfit: roundMoney(price - cost),
+                            unitProfit: belowCostRule.currentData.unitProfit,
                             contributionMarginPercent: unitMargin,
                             inventoryCount: inventory,
                             estimatedLossExposure: totalStockImpact,
@@ -135,10 +171,56 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                     deduplicationKey: dedupKey,
                 });
             }
-            // Case C: Dangerously Low Margin (< 10%)
-            else if (unitMargin !== null && unitMargin < 10 && price > 0) {
+            // Case C: Negative net profit after configured costs
+            else if (negativeProfitRule.detected) {
+                const netLoss = Math.abs(negativeProfitRule.currentData.unitProfit);
+                const totalLoss = inventory > 0 ? roundMoney(netLoss * inventory) : roundMoney(netLoss);
+                const dedupKey = `prod_negative_profit_${variantId}`;
+                const severityInfo = evaluateSeverity({
+                    profitImpact: totalLoss,
+                    marginPercent: unitMargin,
+                    revenue: price,
+                    confidence: "HIGH",
+                    leakType: "PRODUCT",
+                });
+
+                leaks.push({
+                    shop,
+                    leakType: "PRODUCT",
+                    affectedArea: "Unit Economics",
+                    title: `Negative Net Profit: ${title}`,
+                    description: `This product's net profit is negative after shipping, fulfillment, payment, and advertising costs.`,
+                    resourceId: variantId,
+                    resourceType: "ProductVariant",
+                    resourceName: title,
+                    profitImpact: totalLoss,
+                    impactCurrency: storeCurrency,
+                    impactType: "ACTUAL",
+                    severity: severityInfo.severity,
+                    status: "OPEN",
+                    confidence: "HIGH",
+                    detectionRule: "PRODUCT_NEGATIVE_PROFIT",
+                    evidence: {
+                        productId: product.id,
+                        variantId: variant.id,
+                        sellingPrice: price,
+                        costPerItem: cost,
+                        netProfit: negativeProfitRule.currentData.unitProfit,
+                        netMarginPercent: unitMargin,
+                        referencePrice: negativeProfitRule.currentData.referencePrice,
+                        inventoryQuantity: inventory,
+                    },
+                    metadata: {
+                        targetMargin,
+                        calculationBreakdown: negativeProfitRule.currentData,
+                    },
+                    deduplicationKey: dedupKey,
+                });
+            }
+            // Case D: Net margin below target
+            else if (lowMarginRule.detected) {
                 const dedupKey = `prod_low_margin_${variantId}`;
-                const marginDeficit = roundMoney(price * 0.15 - (price - cost)); // gap to healthy 15% margin
+                const marginDeficit = roundMoney(price * (targetMargin / 100) - lowMarginRule.currentData.unitProfit);
                 const totalDeficit = inventory > 0 ? roundMoney(marginDeficit * Math.min(inventory, 20)) : marginDeficit;
 
                 const severityInfo = evaluateSeverity({
@@ -154,7 +236,7 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                     leakType: "PRODUCT",
                     affectedArea: "Unit Economics",
                     title: `Ultra Low Margin: ${title}`,
-                    description: `Margin is only ${unitMargin}%, leaving insufficient room to absorb shipping, payment fees, or marketing.`,
+                    description: `This product is profitable, but its current net margin of ${unitMargin}% is below your target of ${targetMargin}%.`,
                     resourceId: variantId,
                     resourceType: "ProductVariant",
                     resourceName: title,
@@ -171,14 +253,18 @@ export async function detectProductProfitLeaks(shop, storeCurrency = "USD") {
                         sellingPrice: price,
                         costPerItem: cost,
                         unitMarginPercent: unitMargin,
+                        netProfit: lowMarginRule.currentData.unitProfit,
+                        referencePrice: lowMarginRule.currentData.referencePrice,
                         inventoryQuantity: inventory,
                     },
                     metadata: {
+                        targetMargin,
                         calculationBreakdown: {
                             sellingPrice: price,
                             productCost: cost,
-                            unitProfit: roundMoney(price - cost),
+                            unitProfit: lowMarginRule.currentData.unitProfit,
                             marginPercent: unitMargin,
+                            referencePrice: lowMarginRule.currentData.referencePrice,
                         },
                     },
                     deduplicationKey: dedupKey,

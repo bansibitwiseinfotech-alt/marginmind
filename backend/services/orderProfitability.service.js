@@ -613,7 +613,7 @@ export function calculateOrder(order, inputCostConfig = {}) {
   const transactionFees = paymentTransactions.flatMap(
     (transaction) => transaction.fees || []
   );
-  const paymentFee = transactionFees.length
+  const actualPaymentFee = transactionFees.length
     ? roundMoney(
         transactionFees.reduce(
           (total, fee) => total + moneyValue(fee?.amount),
@@ -639,12 +639,17 @@ export function calculateOrder(order, inputCostConfig = {}) {
     costConfig,
   });
   const costsConfigured = costConfig.enabled === true;
+  const paymentFee = actualPaymentFee !== null
+    ? actualPaymentFee
+    : costsConfigured
+      ? roundMoney(calculatedCosts.paymentFee)
+      : null;
   const shippingCost = costsConfigured
     ? roundMoney(calculatedCosts.shippingCost)
     : null;
-  // Shopify does not expose a merchant fulfillment expense on this order.
-  // Keep it unavailable instead of repeating a global estimate on every order.
-  const fulfillmentCost = null;
+  const fulfillmentCost = costsConfigured
+    ? roundMoney(calculatedCosts.fulfillmentCost)
+    : null;
   const advertisingCost = costsConfigured
     ? roundMoney(calculatedCosts.advertisingCost)
     : null;
@@ -662,7 +667,12 @@ export function calculateOrder(order, inputCostConfig = {}) {
    * line item has a valid Shopify COGS.
    */
   const trueProfit =
-    !missingCost
+    !missingCost &&
+    shippingCost !== null &&
+    paymentFee !== null &&
+    fulfillmentCost !== null &&
+    advertisingCost !== null &&
+    taxCost !== null
       ? totalRevenue -
         productCost -
         (shippingCost || 0) -
@@ -838,7 +848,12 @@ export function calculateOrder(order, inputCostConfig = {}) {
       tax: taxCost,
       refund: roundMoney(refund),
       totalKnownCost:
-        missingCost
+        missingCost ||
+        shippingCost === null ||
+        paymentFee === null ||
+        fulfillmentCost === null ||
+        advertisingCost === null ||
+        taxCost === null
           ? null
           : roundMoney(
               productCost +

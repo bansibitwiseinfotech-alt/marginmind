@@ -32,6 +32,9 @@ export async function detectOrderProfitLeaks(shop, storeCostConfig = null, store
         const revenue = Number(order.revenue || 0);
         const productCost = Number(order.productCost || 0);
         const hasMissingCost = order.missingCost === true;
+        if (hasMissingCost) {
+            continue;
+        }
         const shippingCharged = Number(order.shippingCharged || 0);
         const merchantShippingCost = order.shippingCost !== null && order.shippingCost !== undefined
             ? Number(order.shippingCost)
@@ -39,8 +42,11 @@ export async function detectOrderProfitLeaks(shop, storeCostConfig = null, store
 
         const refundAmount = Number(order.refund || 0);
 
-        // Resolve real or estimated payment fee
+        // Resolve real or merchant-configured payment fee only.
         const feeInfo = resolvePaymentFee(order, storeCostConfig);
+        if (merchantShippingCost === null || feeInfo.fee === null || !storeCostConfig?.enabled) {
+            continue;
+        }
 
         const breakdown = calculateOrderContributionBreakdown({
             revenue,

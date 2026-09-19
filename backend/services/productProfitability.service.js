@@ -396,6 +396,7 @@ export async function getProductProfitability({
 
     return {
         products,
+        currency: shopCurrency,
         totalProducts,
         summary: {
             totalProducts,

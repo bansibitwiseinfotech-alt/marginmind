@@ -15,6 +15,7 @@ import {
     updateLeakStatus,
     getDataStatus,
     getProductReviewData,
+    verifyProfitLeak,
 } from "../controllers/profitLeakController.js";
 
 const router = express.Router();
@@ -37,10 +38,13 @@ router.get("/", getProfitLeaks);
 // 5. Product price review — must come before /:id to avoid route collision
 router.get("/:id/product-review", getProductReviewData);
 
-// 6. Get deep details for a single leak
+// 6. Verify live product data and resolve/reopen the leak when appropriate
+router.get("/:id/verify", verifyProfitLeak);
+
+// 7. Get deep details for a single leak
 router.get("/:id", getProfitLeakDetails);
 
-// 7. Update leak status (OPEN, RESOLVED, IGNORED)
+// 8. Update leak status (OPEN, RESOLVED, IGNORED)
 router.patch("/:id/status", updateLeakStatus);
 
 export default router;

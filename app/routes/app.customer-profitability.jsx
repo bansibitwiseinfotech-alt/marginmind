@@ -89,11 +89,11 @@ export const loader = async ({ request }) => {
       discounts: item.discounts ?? 0,
       returns: item.returns ?? 0,
       shippingCharged: item.shippingCharged ?? 0,
-      shippingCost: item.shippingCost ?? 0,
+      shippingCost: item.shippingCost ?? null,
       shippingCostSource: item.shippingCostSource || null,
-      paymentFees: item.paymentFees ?? 0,
+      paymentFees: item.paymentFees ?? null,
       paymentFeeSource: item.paymentFeeSource || null,
-      fulfillmentCost: item.fulfillmentCost ?? 0,
+      fulfillmentCost: item.fulfillmentCost ?? null,
       fulfillmentCostSource: item.fulfillmentCostSource || null,
       tax: item.tax ?? 0,
       productCost: item.productCost ?? null,
@@ -103,7 +103,7 @@ export const loader = async ({ request }) => {
       segment: item.segment || "NO_COST",
       statusLabel: item.statusLabel || "No cost data",
       dataScope: item.dataScope || "",
-      netRevenue: item.netRevenue ?? 0,
+      netRevenue: item.netRevenue ?? null,
       totalCosts: item.totalCosts ?? null,
       unavailableCosts: item.unavailableCosts || [],
       costDataComplete: Boolean(item.costDataComplete),
@@ -133,7 +133,7 @@ export const loader = async ({ request }) => {
 
   return {
     customers,
-    currency: selectedCustomer?.currency || listData?.data?.currency || "USD",
+    currency: selectedCustomer?.currency || listData?.data?.currency || null,
     currentShop: session.shop,
     summary: {
       totalCustomers: listData?.data?.totalCustomers ?? customers.length,
@@ -150,10 +150,10 @@ export const loader = async ({ request }) => {
 
 // ==========================================
 // HELPERS
-// ==========================================
+// ==========================================   
 
-const formatMoney = (value, currency = "USD") => {
-  if (value === null || value === undefined) {
+const formatMoney = (value, currency) => {
+  if (value === null || value === undefined || !currency) {
     return "—";
   }
 
@@ -443,17 +443,17 @@ function CustomerProfitabilityDetailView({
               />
               <DetailRow
                 label="Merchant Shipping Cost"
-                value={formatMoney(customer.shippingCost || 0, currency)}
+                value={customer.shippingCost !== null ? formatMoney(customer.shippingCost, currency) : "Not available"}
                 source={customer.shippingCostSource || "Store Settings"}
               />
               <DetailRow
                 label="Payment Processing Fee"
-                value={formatMoney(customer.paymentFees || 0, currency)}
+                value={customer.paymentFees !== null ? formatMoney(customer.paymentFees, currency) : "Not available"}
                 source={customer.paymentFeeSource || "Shopify Payment Gateway"}
               />
               <DetailRow
                 label="Fulfillment Cost"
-                value={formatMoney(customer.fulfillmentCost || 0, currency)}
+                value={customer.fulfillmentCost !== null ? formatMoney(customer.fulfillmentCost, currency) : "Not available"}
                 source={customer.fulfillmentCostSource || "Store Settings"}
               />
               <Divider />
@@ -570,7 +570,7 @@ function CustomerProfitabilityDetailView({
                             {formatMoney(order.returns, currency)}
                           </td>
                           <td style={{ padding: "10px 8px" }}>
-                            {formatMoney(order.shippingCost || 0, currency)}
+                            {order.shippingCost !== null ? formatMoney(order.shippingCost, currency) : "Not available"}
                           </td>
                           <td style={{ padding: "10px 8px" }}>
                             {order.productCost !== null
@@ -578,10 +578,10 @@ function CustomerProfitabilityDetailView({
                               : "—"}
                           </td>
                           <td style={{ padding: "10px 8px" }}>
-                            {formatMoney(order.paymentFee || 0, currency)}
+                            {order.paymentFee !== null ? formatMoney(order.paymentFee, currency) : "Not available"}
                           </td>
                           <td style={{ padding: "10px 8px" }}>
-                            {formatMoney(order.fulfillmentCost || 0, currency)}
+                            {order.fulfillmentCost !== null ? formatMoney(order.fulfillmentCost, currency) : "Not available"}
                           </td>
                           <td style={{ padding: "10px 8px" }}>
                             <Text
@@ -648,7 +648,7 @@ export default function CustomerProfitability() {
   const {
     customers = [],
     summary = {},
-    currency = "USD",
+    currency = null,
     currentShop = "",
     selectedCustomer = null,
     detailError = null,
@@ -1030,7 +1030,7 @@ export default function CustomerProfitability() {
 
                 {/* 6. Shipping Cost */}
                 <IndexTable.Cell>
-                  {formatMoney(customer.shippingCost || 0, currency)}
+                  {customer.shippingCost !== null ? formatMoney(customer.shippingCost, currency) : "Not available"}
                 </IndexTable.Cell>
 
                 {/* 7. Product Cost */}
@@ -1042,12 +1042,12 @@ export default function CustomerProfitability() {
 
                 {/* 8. Payment Fee */}
                 <IndexTable.Cell>
-                  {formatMoney(customer.paymentFees || 0, currency)}
+                  {customer.paymentFees !== null ? formatMoney(customer.paymentFees, currency) : "Not available"}
                 </IndexTable.Cell>
 
                 {/* 9. Fulfillment Cost */}
                 <IndexTable.Cell>
-                  {formatMoney(customer.fulfillmentCost || 0, currency)}
+                  {customer.fulfillmentCost !== null ? formatMoney(customer.fulfillmentCost, currency) : "Not available"}
                 </IndexTable.Cell>
 
                 {/* 10. True Profit */}

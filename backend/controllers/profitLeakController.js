@@ -16,6 +16,8 @@ import {
 } from "../services/profitLeakService.js";
 import { getProductProfitability } from "../services/productProfitability.service.js";
 import { createShopifyAdminClient } from "../services/shopifyClient.js";
+import { detectProductLeak, PRODUCT_LOW_MARGIN_THRESHOLD } from "../utils/productLeakRules.js";
+import { buildShopifyAdminResourceUrl, extractShopifyNumericId } from "../utils/shopifyAdminUrl.js";
 
 /**
  * Resolves the store domain strictly from the verified request header
@@ -113,7 +115,10 @@ export const getProfitLeakDetails = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: leak,
+            data: {
+                ...leak,
+                adminUrl: buildShopifyAdminResourceUrl(shop, leak.resourceType, leak.resourceId),
+            },
         });
     } catch (error) {
         console.error("[MarginMind] getProfitLeakDetails error:", error);
@@ -296,9 +301,7 @@ export const getDataStatus = async (req, res) => {
  * e.g. "gid://shopify/Product/8765432" -> "8765432"
  */
 function extractNumericId(gid) {
-    if (!gid) return null;
-    const parts = String(gid).split("/");
-    return parts[parts.length - 1] || null;
+    return extractShopifyNumericId(gid);
 }
 
 /**
@@ -346,6 +349,78 @@ const PRODUCT_REVIEW_QUERY = `
     }
   }
 `;
+
+function mapShopifyProductForReview(sp, shop, numericProductId, shopifyCurrency) {
+    const variants = (sp.variants?.nodes || []).map((v) => {
+        const price = Number(v.price || 0);
+        const cost =
+            v.inventoryItem?.unitCost?.amount != null
+                ? Number(v.inventoryItem.unitCost.amount)
+                : null;
+        const unitProfit = cost !== null ? Number((price - cost).toFixed(2)) : null;
+        const unitMargin =
+            cost !== null && price > 0
+                ? Number((((price - cost) / price) * 100).toFixed(2))
+                : null;
+
+        return {
+            id: v.id,
+            title: v.title,
+            sku: v.sku || "",
+            image: v.image?.url || null,
+            imageAlt: v.image?.altText || sp.title,
+            price,
+            cost,
+            unitProfit,
+            unitMargin,
+            inventoryQuantity: Number(v.inventoryQuantity || 0),
+            costCurrency: v.inventoryItem?.unitCost?.currencyCode || shopifyCurrency,
+        };
+    });
+
+    const resolvedImage =
+        sp.featuredImage?.url ||
+        sp.images?.nodes?.[0]?.url ||
+        sp.variants?.nodes?.find((v) => v.image?.url)?.image?.url ||
+        null;
+
+    const resolvedImageAlt =
+        sp.featuredImage?.altText ||
+        sp.images?.nodes?.[0]?.altText ||
+        sp.title;
+
+    return {
+        id: sp.id,
+        numericId: numericProductId,
+        title: sp.title,
+        handle: sp.handle,
+        status: sp.status,
+        image: resolvedImage,
+        imageAlt: resolvedImageAlt,
+        adminUrl: buildShopifyAdminResourceUrl(shop, "Product", sp.id),
+        variants,
+    };
+}
+
+async function fetchShopifyProductForReview(shop, productGid) {
+    const client = await createShopifyAdminClient(shop);
+    const shopifyData = await client.graphql(PRODUCT_REVIEW_QUERY, { id: productGid });
+    const product = shopifyData?.product;
+
+    if (!product) {
+        return { product: null, currency: shopifyData?.shop?.currencyCode || "USD" };
+    }
+
+    return {
+        product: mapShopifyProductForReview(
+            product,
+            shop,
+            extractNumericId(product.id),
+            shopifyData?.shop?.currencyCode || "USD"
+        ),
+        currency: shopifyData?.shop?.currencyCode || "USD",
+    };
+}
 
 /**
  * GET /api/profit-leaks/:id/product-review
@@ -422,56 +497,12 @@ export const getProductReviewData = async (req, res) => {
                 shopifyCurrency = shopifyData?.shop?.currencyCode || storeCurrency;
 
                 if (shopifyData?.product) {
-                    const sp = shopifyData.product;
-                    const variants = (sp.variants?.nodes || []).map((v) => {
-                        const price = Number(v.price || 0);
-                        const cost =
-                            v.inventoryItem?.unitCost?.amount != null
-                                ? Number(v.inventoryItem.unitCost.amount)
-                                : null;
-                        const unitProfit = cost !== null ? Number((price - cost).toFixed(2)) : null;
-                        const unitMargin =
-                            cost !== null && price > 0
-                                ? Number((((price - cost) / price) * 100).toFixed(2))
-                                : null;
-
-                        return {
-                            id: v.id,
-                            title: v.title,
-                            sku: v.sku || "",
-                            price,
-                            cost,
-                            unitProfit,
-                            unitMargin,
-                            inventoryQuantity: Number(v.inventoryQuantity || 0),
-                            costCurrency:
-                                v.inventoryItem?.unitCost?.currencyCode || shopifyCurrency,
-                        };
-                    });
-
-                    const resolvedImage =
-                        sp.featuredImage?.url ||
-                        sp.images?.nodes?.[0]?.url ||
-                        sp.variants?.nodes?.find((v) => v.image?.url)?.image?.url ||
-                        null;
-
-                    const resolvedImageAlt =
-                        sp.featuredImage?.altText ||
-                        sp.images?.nodes?.[0]?.altText ||
-                        sp.title;
-
-                    productData = {
-                        id: sp.id,
-                        numericId: numericProductId,
-                        title: sp.title,
-                        handle: sp.handle,
-                        status: sp.status,
-                        image: resolvedImage,
-                        imageAlt: resolvedImageAlt,
-                        // Safe admin URL — numeric ID from GID, no access token exposed
-                        adminUrl: `https://${shop}/admin/products/${numericProductId}`,
-                        variants,
-                    };
+                    productData = mapShopifyProductForReview(
+                        shopifyData.product,
+                        shop,
+                        numericProductId,
+                        shopifyCurrency
+                    );
                 }
             } catch (shopifyErr) {
                 // Non-fatal: product may have been deleted from Shopify.
@@ -491,9 +522,23 @@ export const getProductReviewData = async (req, res) => {
             paymentFeeFlat: costConfig.paymentFeeFlat || 0,
             advertisingCostRate: costConfig.advertisingCostRate || 0,
             advertisingCostFlat: costConfig.advertisingCostFlat || 0,
+            targetMargin: Number(costConfig.targetMargin) || PRODUCT_LOW_MARGIN_THRESHOLD,
             taxRate: costConfig.taxRate || 0,
             costConfigEnabled: costConfig.enabled || false,
         };
+
+        const focusedVariant = productData?.variants?.find(
+            (variant) => variant.id === leak.evidence?.variantId
+        ) || productData?.variants?.[0];
+        const reviewMetrics = focusedVariant
+            ? detectProductLeak({
+                price: focusedVariant.price,
+                cost: focusedVariant.cost,
+                detectionRule: leak.detectionRule,
+                targetMargin: storeCosts.targetMargin,
+                costConfig,
+            })
+            : null;
 
         return res.status(200).json({
             success: true,
@@ -502,6 +547,7 @@ export const getProductReviewData = async (req, res) => {
                 product: productData,
                 storeCosts,
                 currency: shopifyCurrency,
+                reviewMetrics,
                 // Surfaces the variantId from evidence so we can highlight it in the variants list
                 focusedVariantId: leak.evidence?.variantId || null,
             },
@@ -511,6 +557,128 @@ export const getProductReviewData = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Failed to load product review data",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * GET /api/profit-leaks/:id/verify
+ * Re-checks the live Shopify product data before changing leak status.
+ */
+export const verifyProfitLeak = async (req, res) => {
+    try {
+        const shop = resolveShop(req);
+        const { id } = req.params;
+
+        if (!shop) {
+            return res.status(400).json({ success: false, message: "Shop domain is required" });
+        }
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: "Invalid profit leak ID format" });
+        }
+
+        const leak = await getSingleProfitLeak(shop, id);
+        if (!leak) {
+            return res.status(404).json({ success: false, message: "Profit leak record not found" });
+        }
+
+        if (!["PRODUCT", "DATA_QUALITY"].includes(leak.leakType)) {
+            const detectionRun = await runProfitLeakEngine(shop, { includeDetectedLeaks: true });
+            const currentLeak = detectionRun.detectedLeaks.find(
+                (item) => item.deduplicationKey === leak.deduplicationKey
+            );
+            const detected = Boolean(currentLeak);
+            let status = leak.status;
+
+            if (detected && leak.status === "RESOLVED") {
+                status = "OPEN";
+                await updateProfitLeakStatus(shop, id, "OPEN");
+            } else if (!detected && leak.status === "OPEN") {
+                status = "RESOLVED";
+                await updateProfitLeakStatus(shop, id, "RESOLVED");
+            }
+
+            return res.status(200).json({
+                success: true,
+                resolved: !detected,
+                status,
+                message: detected
+                    ? "The issue is still detected."
+                    : "The profit leak is no longer detected.",
+                currentData: currentLeak?.evidence || leak.evidence || {},
+                rule: { detectionRule: leak.detectionRule },
+                checkedAt: new Date().toISOString(),
+            });
+        }
+
+        const productGid = leak.evidence?.productId;
+        if (!productGid) {
+            return res.status(422).json({
+                success: false,
+                message: "Product could not be found in Shopify.",
+            });
+        }
+
+        const snapshot = await fetchShopifyProductForReview(shop, productGid);
+        if (!snapshot.product) {
+            return res.status(404).json({
+                success: false,
+                message: "Product could not be found in Shopify.",
+            });
+        }
+
+        const variantId = leak.evidence?.variantId;
+        const variant =
+            snapshot.product.variants.find((item) => item.id === variantId) ||
+            snapshot.product.variants[0];
+
+        if (!variant) {
+            return res.status(422).json({
+                success: false,
+                message: "Product variant could not be found in Shopify.",
+            });
+        }
+
+        const store = await Store.findOne({ shop }).lean();
+        const costConfig = store?.costConfig || {};
+        const targetMargin = Number(costConfig.targetMargin) || PRODUCT_LOW_MARGIN_THRESHOLD;
+        const evaluation = detectProductLeak({
+            price: variant.price,
+            cost: variant.cost,
+            detectionRule: leak.detectionRule,
+            targetMargin,
+            costConfig,
+        });
+        const checkedAt = new Date();
+        let status = leak.status;
+
+        if (evaluation.detected) {
+            status = leak.status === "RESOLVED" ? "OPEN" : leak.status;
+            if (status !== leak.status) {
+                await updateProfitLeakStatus(shop, id, "OPEN");
+            }
+        } else if (leak.status === "OPEN") {
+            status = "RESOLVED";
+            await updateProfitLeakStatus(shop, id, "RESOLVED");
+        }
+
+        return res.status(200).json({
+            success: true,
+            resolved: !evaluation.detected,
+            status,
+            message: evaluation.detected
+                ? "The issue is still detected."
+                : "The profit leak is no longer detected.",
+            currentData: evaluation.currentData,
+            rule: { targetMargin: evaluation.targetMargin },
+            checkedAt: checkedAt.toISOString(),
+        });
+    } catch (error) {
+        console.error("[MarginMind] verifyProfitLeak error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Unable to verify the latest product data.",
             error: error.message,
         });
     }

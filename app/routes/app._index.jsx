@@ -164,13 +164,6 @@ export default function Index() {
         </s-paragraph>
       </s-section>
 
-      <s-section heading="Next: Task 2 Data Sync" slot="aside">
-        <s-unordered-list>
-          <s-list-item>Products & inventory sync</s-list-item>
-          <s-list-item>Order and transaction sync</s-list-item>
-          <s-list-item>COGS profit margin tracking</s-list-item>
-        </s-unordered-list>
-      </s-section>
     </s-page>
   );
 }

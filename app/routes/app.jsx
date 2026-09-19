@@ -40,6 +40,12 @@ export default function App() {
           <s-link href="/app/profit-leak-detector">
   Profit Leak Detector
 </s-link>
+          <s-link href="/app/profit-simulator">
+  Profit Simulator
+</s-link>
+          <s-link href="/app/profit-alerts">
+  Profit Alerts
+</s-link>
         </s-app-nav>
         <Outlet />
       </PolarisAppProvider>

@@ -18,13 +18,13 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function formatMoney(value, currency = "USD") {
-  if (value === null || value === undefined) {
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || !currency) {
     return "—";
   }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency || "USD",
+    currency,
     maximumFractionDigits: 2,
   }).format(Number(value));
 }
@@ -61,7 +61,7 @@ function CompactInfoRow({ label, value, tone, isBold = false }) {
 // ---------------------------------------------------------------------------
 // Dedicated Full-Page Detail View (Tight, Compact & Perfect Polaris Layout)
 // ---------------------------------------------------------------------------
-function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
+function DiscountImpactDetailView({ discount, onBack, onRetry, loading, currency }) {
   if (!discount) {
     return (
       <Page
@@ -124,7 +124,7 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                   REVENUE
                 </Text>
                 <Text variant="headingLg" fontWeight="bold" as="p">
-                  {formatMoney(discount.revenue)}
+                  {formatMoney(discount.revenue, currency)}
                 </Text>
               </BlockStack>
             </Box>
@@ -135,7 +135,7 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                   DISCOUNT AMOUNT
                 </Text>
                 <Text variant="headingLg" fontWeight="bold" as="p">
-                  {formatMoney(discount.discountAmount)}
+                  {formatMoney(discount.discountAmount, currency)}
                 </Text>
               </BlockStack>
             </Box>
@@ -148,8 +148,8 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                 <Text variant="headingLg" fontWeight="bold" tone={profitTone} as="p">
                   {discount.profitAfterDiscount !== null
                     ? (discount.profitAfterDiscount >= 0
-                        ? `+${formatMoney(discount.profitAfterDiscount)}`
-                        : formatMoney(discount.profitAfterDiscount))
+                        ? `+${formatMoney(discount.profitAfterDiscount, currency)}`
+                        : formatMoney(discount.profitAfterDiscount, currency))
                     : "—"}
                 </Text>
               </BlockStack>
@@ -185,10 +185,10 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
               <CompactInfoRow label="Discount Code / Title" value={discount.discountCode} isBold />
               <CompactInfoRow label="Discount Type" value={discount.discountType || "Code"} />
               <CompactInfoRow label="Affected Orders" value={String(discount.orders)} />
-              <CompactInfoRow label="Gross Discount Given" value={formatMoney(discount.discountAmount)} isBold />
+              <CompactInfoRow label="Gross Discount Given" value={formatMoney(discount.discountAmount, currency)} isBold />
               <CompactInfoRow
                 label="Profit Impact"
-                value={discount.profitImpact !== null ? `${discount.profitImpact >= 0 ? "+" : ""}${formatMoney(discount.profitImpact)}` : "—"}
+                value={discount.profitImpact !== null ? `${discount.profitImpact >= 0 ? "+" : ""}${formatMoney(discount.profitImpact, currency)}` : "—"}
                 isBold
               />
               <CompactInfoRow
@@ -218,24 +218,24 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                   <tbody>
                     <tr style={{ borderBottom: "1px solid #f1f2f3" }}>
                       <td style={{ padding: "8px 4px", fontWeight: 600 }}>Revenue</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{formatMoney(discount.revenueBeforeDiscount)}</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{formatMoney(discount.revenue)}</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 600 }}>−{formatMoney(discount.discountAmount)}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{formatMoney(discount.revenueBeforeDiscount, currency)}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{formatMoney(discount.revenue, currency)}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 600 }}>−{formatMoney(discount.discountAmount, currency)}</td>
                     </tr>
                     <tr style={{ borderBottom: "1px solid #f1f2f3" }}>
                       <td style={{ padding: "8px 4px", fontWeight: 600 }}>COGS</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.productCost !== null ? formatMoney(discount.productCost) : "—"}</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.productCost !== null ? formatMoney(discount.productCost) : "—"}</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>$0.00</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.productCost !== null ? formatMoney(discount.productCost, currency) : "—"}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.productCost !== null ? formatMoney(discount.productCost, currency) : "—"}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>No change</td>
                     </tr>
                     <tr style={{ borderBottom: "1px solid #f1f2f3" }}>
                       <td style={{ padding: "8px 4px", fontWeight: 600 }}>Profit</td>
-                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.profitBeforeDiscount !== null ? formatMoney(discount.profitBeforeDiscount) : "—"}</td>
+                      <td style={{ textAlign: "right", padding: "8px 4px" }}>{discount.profitBeforeDiscount !== null ? formatMoney(discount.profitBeforeDiscount, currency) : "—"}</td>
                       <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: "bold" }}>
-                        {discount.profitAfterDiscount !== null ? formatMoney(discount.profitAfterDiscount) : "—"}
+                        {discount.profitAfterDiscount !== null ? formatMoney(discount.profitAfterDiscount, currency) : "—"}
                       </td>
                       <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: "bold" }}>
-                        {discount.profitImpact !== null ? `${discount.profitImpact >= 0 ? "+" : ""}${formatMoney(discount.profitImpact)}` : "—"}
+                        {discount.profitImpact !== null ? `${discount.profitImpact >= 0 ? "+" : ""}${formatMoney(discount.profitImpact, currency)}` : "—"}
                       </td>
                     </tr>
                     <tr>
@@ -291,11 +291,11 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                   </Text>
                 </IndexTable.Cell>
                 <IndexTable.Cell>
-                  <Text as="span">{formatMoney(ord.revenue)}</Text>
+                  <Text as="span">{formatMoney(ord.revenue, currency)}</Text>
                 </IndexTable.Cell>
                 <IndexTable.Cell>
                   <Text as="span" fontWeight="bold">
-                    {formatMoney(ord.discount)}
+                    {formatMoney(ord.discount, currency)}
                   </Text>
                 </IndexTable.Cell>
                 <IndexTable.Cell>
@@ -304,7 +304,7 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
                     fontWeight="bold"
                     tone={ord.profit === null ? "subdued" : undefined}
                   >
-                    {ord.profit !== null ? formatMoney(ord.profit) : "—"}
+                    {ord.profit !== null ? formatMoney(ord.profit, currency) : "—"}
                   </Text>
                 </IndexTable.Cell>
                 <IndexTable.Cell>
@@ -326,6 +326,10 @@ function DiscountImpactDetailView({ discount, onBack, onRetry, loading }) {
 // ---------------------------------------------------------------------------
 export default function DiscountImpact({ initialData = null, initialError = null }) {
   const [discounts, setDiscounts] = useState(initialData?.discounts || []);
+  const [currency, setCurrency] = useState(initialData?.currency || null);
+  const [profitImpactAvailable, setProfitImpactAvailable] = useState(
+    initialData?.profitImpactAvailable !== false
+  );
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState(initialError || "");
 
@@ -347,6 +351,8 @@ export default function DiscountImpact({ initialData = null, initialError = null
       }
 
       setDiscounts(result.data?.discounts || []);
+      setCurrency(result.data?.currency || null);
+      setProfitImpactAvailable(result.data?.profitImpactAvailable !== false);
     } catch (err) {
       console.error("[MarginMind] Discount impact fetch error:", err);
       setError(err.message || "Failed to load discount data");
@@ -397,10 +403,11 @@ export default function DiscountImpact({ initialData = null, initialError = null
     (acc, d) => acc + Number(d.revenue || 0),
     0
   );
-  const totalProfitImpact = filteredDiscounts.reduce(
-    (acc, d) => acc + Number(d.profitImpact || 0),
-    0
-  );
+  const totalProfitImpact = profitImpactAvailable && filteredDiscounts.every(
+    (discount) => discount.costDataStatus !== "INCOMPLETE"
+  )
+    ? filteredDiscounts.reduce((acc, d) => acc + Number(d.profitImpact), 0)
+    : null;
 
   if (selectedDiscount) {
     return (
@@ -409,6 +416,7 @@ export default function DiscountImpact({ initialData = null, initialError = null
         onBack={() => setSelectedDiscount(null)}
         onRetry={handleRefresh}
         loading={loading}
+        currency={currency}
       />
     );
   }
@@ -501,7 +509,7 @@ export default function DiscountImpact({ initialData = null, initialError = null
                 TOTAL DISCOUNT AMOUNT
               </Text>
               <Text as="p" variant="headingXl" fontWeight="bold">
-                {formatMoney(totalDiscountAmount)}
+                {formatMoney(totalDiscountAmount, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 Gross discounts given
@@ -515,7 +523,7 @@ export default function DiscountImpact({ initialData = null, initialError = null
                 NET REVENUE
               </Text>
               <Text as="p" variant="headingXl" fontWeight="bold">
-                {formatMoney(totalRevenue)}
+                {formatMoney(totalRevenue, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 After discounts & refunds
@@ -533,7 +541,11 @@ export default function DiscountImpact({ initialData = null, initialError = null
                 variant="headingXl"
                 fontWeight="bold"
               >
-                {totalProfitImpact >= 0 ? `+${formatMoney(totalProfitImpact)}` : formatMoney(totalProfitImpact)}
+                {totalProfitImpact === null
+                  ? "Not available"
+                  : totalProfitImpact >= 0
+                    ? `+${formatMoney(totalProfitImpact, currency)}`
+                    : formatMoney(totalProfitImpact, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 Bottom-line profitability shift
@@ -596,31 +608,31 @@ export default function DiscountImpact({ initialData = null, initialError = null
                   </IndexTable.Cell>
 
                   <IndexTable.Cell>
-                    <Text as="span">{formatMoney(discount.revenue)}</Text>
+                    <Text as="span">{formatMoney(discount.revenue, currency)}</Text>
                   </IndexTable.Cell>
 
                   <IndexTable.Cell>
                     <Text as="span">
-                      {discount.productCost !== null ? formatMoney(discount.productCost) : "—"}
+                      {discount.productCost !== null ? formatMoney(discount.productCost, currency) : "—"}
                     </Text>
                   </IndexTable.Cell>
 
                   <IndexTable.Cell>
                     <Text as="span" fontWeight="bold">
-                      {formatMoney(discount.discountAmount)}
+                      {formatMoney(discount.discountAmount, currency)}
                     </Text>
                   </IndexTable.Cell>
 
                   <IndexTable.Cell>
                     <Text as="span">
-                      {discount.profitBeforeDiscount !== null ? formatMoney(discount.profitBeforeDiscount) : "—"}
+                      {discount.profitBeforeDiscount !== null ? formatMoney(discount.profitBeforeDiscount, currency) : "—"}
                     </Text>
                   </IndexTable.Cell>
 
                   <IndexTable.Cell>
                     <Text as="span" fontWeight="bold" tone={profitTone}>
                       {discount.profitAfterDiscount !== null
-                        ? (discount.profitAfterDiscount > 0 ? `+${formatMoney(discount.profitAfterDiscount)}` : formatMoney(discount.profitAfterDiscount))
+                        ? (discount.profitAfterDiscount > 0 ? `+${formatMoney(discount.profitAfterDiscount, currency)}` : formatMoney(discount.profitAfterDiscount, currency))
                         : "—"}
                     </Text>
                   </IndexTable.Cell>

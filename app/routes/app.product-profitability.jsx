@@ -167,11 +167,11 @@ export const action = async ({ request }) => {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function formatMoney(value, currency = "USD") {
-  if (value === null || value === undefined) return "—";
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || !currency) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency || "USD",
+    currency,
     maximumFractionDigits: 2,
   }).format(Number(value));
 }

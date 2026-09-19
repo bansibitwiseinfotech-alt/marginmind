@@ -112,7 +112,10 @@ export async function updateProfitLeakStatus(shop, leakId, status) {
  * Get aggregate store summary metrics.
  */
 export async function getProfitLeakStoreSummary(shop) {
-    const leaks = await ProfitLeak.find({ shop, status: "OPEN" }).lean();
+    const [leaks, totalResolved] = await Promise.all([
+        ProfitLeak.find({ shop, status: "OPEN" }).lean(),
+        ProfitLeak.countDocuments({ shop, status: "RESOLVED" }),
+    ]);
 
     let criticalCount = 0;
     let warningCount = 0;
@@ -137,6 +140,7 @@ export async function getProfitLeakStoreSummary(shop) {
 
     return {
         totalLeaks: leaks.length,
+        totalResolved,
         criticalLeaks: criticalCount,
         warningLeaks: warningCount,
         informationalFindings: infoCount,

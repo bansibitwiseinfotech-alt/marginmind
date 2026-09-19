@@ -305,13 +305,13 @@ export const processCustomerNode = (customer, costConfig) => {
     : null;
   let customerShippingCost = hasConfiguredShipping
     ? roundMoney(customerTotalShippingCost)
-    : 0;
+    : null;
   let customerPaymentFees = hasAnyPaymentFee
     ? roundMoney(customerTotalPaymentFees)
-    : 0;
+    : null;
   let customerFulfillmentCost = hasConfiguredFulfillment
     ? roundMoney(customerTotalFulfillmentCost)
-    : 0;
+    : null;
 
   let customerTotalCosts = null;
   let customerProfit = null;
@@ -338,7 +338,13 @@ export const processCustomerNode = (customer, costConfig) => {
     }
 
     // Calculate True Profit from available product costs and configured costs
-    if (customerProductCost !== null) {
+    if (
+      customerProductCost !== null &&
+      !customerHasAnyMissingCost &&
+      hasConfiguredShipping &&
+      hasAnyPaymentFee &&
+      hasConfiguredFulfillment
+    ) {
       customerTotalCosts = roundMoney(
         customerProductCost +
         (customerShippingCost || 0) +
@@ -407,7 +413,12 @@ export const processCustomerNode = (customer, costConfig) => {
     segment: segmentation.segment,
     statusLabel: segmentation.label,
 
-    costDataComplete: hasOrders && !customerHasAnyMissingCost && customerProductCost !== null,
+    costDataComplete: hasOrders &&
+      !customerHasAnyMissingCost &&
+      customerProductCost !== null &&
+      hasConfiguredShipping &&
+      hasAnyPaymentFee &&
+      hasConfiguredFulfillment,
     unavailableCosts: customerUnavailableCosts,
     dataScope,
 

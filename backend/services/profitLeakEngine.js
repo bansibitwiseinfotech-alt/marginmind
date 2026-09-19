@@ -24,7 +24,7 @@ import { detectRefundProfitLeaks } from "./refundProfitLeakService.js";
  * @param {string} shop - Verified myshopify domain
  * @returns {Promise<object>} Execution summary and detected leaks
  */
-export async function runProfitLeakEngine(shop) {
+export async function runProfitLeakEngine(shop, options = {}) {
     const startTime = new Date();
 
     const store = await getStoreWithActiveToken(shop);
@@ -54,7 +54,7 @@ export async function runProfitLeakEngine(shop) {
 
     // 1. Run detection modules in parallel
     await Promise.all([
-        executeModule("ProductProfitLeaks", () => detectProductProfitLeaks(shop, storeCurrency)),
+        executeModule("ProductProfitLeaks", () => detectProductProfitLeaks(shop, storeCurrency, storeCostConfig)),
         executeModule("OrderProfitLeaks", () => detectOrderProfitLeaks(shop, storeCostConfig, storeCurrency)),
         executeModule("CustomerProfitLeaks", () => detectCustomerProfitLeaks(shop, storeCurrency)),
         executeModule("DiscountProfitLeaks", () => detectDiscountProfitLeaks(shop, storeCurrency)),
@@ -79,6 +79,12 @@ export async function runProfitLeakEngine(shop) {
             // Update financial metrics on open leaks to reflect latest numbers
             existing.profitImpact = leak.profitImpact;
             existing.severity = leak.severity;
+            existing.title = leak.title;
+            existing.description = leak.description;
+            existing.affectedArea = leak.affectedArea;
+            existing.detectionRule = leak.detectionRule;
+            existing.resourceType = leak.resourceType;
+            existing.resourceName = leak.resourceName;
             existing.evidence = leak.evidence;
             existing.metadata = leak.metadata;
             existing.detectedAt = new Date();
@@ -110,6 +116,7 @@ export async function runProfitLeakEngine(shop) {
     return {
         success: true,
         shop,
+        ...(options.includeDetectedLeaks ? { detectedLeaks } : {}),
         summary: {
             totalLeaks: allOpenLeaks.length,
             criticalLeaks: criticalCount,

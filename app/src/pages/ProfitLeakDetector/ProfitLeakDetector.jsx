@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Page,
   Card,
@@ -29,11 +29,11 @@ import { RefreshIcon, SearchIcon, ExportIcon, ImageIcon } from "@shopify/polaris
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function formatMoney(value, currency = "USD") {
-  if (value === null || value === undefined || value === "") return "—";
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || value === "" || !currency) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency || "USD",
+    currency,
     maximumFractionDigits: 2,
   }).format(Number(value));
 }
@@ -155,7 +155,7 @@ function DataStatusBanner({ dataStatus }) {
     <Card padding="300">
       <BlockStack gap="200">
         <InlineStack align="space-between" blockAlign="center">
-          <Text as="h2" variant="headingSm" fontWeight="bold">Store Data Status</Text>
+              <Text as="h2" variant="headingSm" fontWeight="bold">Store Data Status</Text>
           <InlineStack gap="150">
             <Badge tone={syncTone}>{syncStatus || "idle"}</Badge>
             {missingCostConfig && (
@@ -264,6 +264,9 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [updateSuccess, setUpdateSuccess] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
+  const [verifyError, setVerifyError] = useState("");
 
   useEffect(() => {
     if (open && leakId) {
@@ -318,6 +321,26 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
     }
   }
 
+  async function handleVerify() {
+    if (!leakId) return;
+    setVerifying(true);
+    setVerifyError("");
+    try {
+      const res = await fetch(`/api/profit-leaks/${leakId}/verify`);
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || "Unable to verify the latest data.");
+      }
+      setVerifyResult(json);
+      setLeak((prev) => ({ ...prev, status: json.status }));
+      onStatusUpdate();
+    } catch (err) {
+      setVerifyError(err.message);
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   function CompactRow({ label, value, tone: rowTone, isBold }) {
     return (
       <InlineStack align="space-between" blockAlign="center">
@@ -363,6 +386,16 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
             {updateSuccess && (
               <Banner tone="success" title="Status updated" onDismiss={() => setUpdateSuccess("")}>
                 <p>{updateSuccess}</p>
+              </Banner>
+            )}
+            {verifyError && (
+              <Banner tone="critical" title="Unable to verify the latest data." onDismiss={() => setVerifyError("")}>
+                <p>{verifyError}</p>
+              </Banner>
+            )}
+            {verifyResult && (
+              <Banner tone={verifyResult.resolved ? "success" : "warning"} title={verifyResult.resolved ? "Issue resolved" : "Still detected"}>
+                <p>{verifyResult.message}</p>
               </Banner>
             )}
 
@@ -469,7 +502,7 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                       <thead>
-                        <tr style={{ borderBottom: "1px solid #e1e3e5", color: "#6d7175" }}>
+                        <tr style={{ borderBottom: "1px solid #e1e3e5", color: "#202223" }}>
                           <th style={{ textAlign: "left", padding: "6px 8px" }}>Field</th>
                           <th style={{ textAlign: "right", padding: "6px 8px" }}>Value</th>
                         </tr>
@@ -512,7 +545,7 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                       <thead>
-                        <tr style={{ borderBottom: "1px solid #e1e3e5", color: "#6d7175" }}>
+                        <tr style={{ borderBottom: "1px solid #e1e3e5", color: "#202223" }}>
                           {Object.keys(leak.metadata.affectedRecords[0] || {}).map((col) => (
                             <th
                               key={col}
@@ -556,7 +589,7 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
                 </InlineStack>
                 <Divider />
                 <InlineStack gap="200">
-                  {["OPEN", "RESOLVED", "IGNORED"].map((s) => (
+                  {["OPEN", "IGNORED"].map((s) => (
                     <Button
                       key={s}
                       variant={leak.status === s ? "primary" : "secondary"}
@@ -568,6 +601,16 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
                       Mark {s}
                     </Button>
                   ))}
+                </InlineStack>
+                <InlineStack gap="200">
+                  {leak.adminUrl && (
+                    <Button onClick={() => window.open(leak.adminUrl, "_blank", "noopener,noreferrer")}>
+                      Fix in Shopify
+                    </Button>
+                  )}
+                  <Button onClick={handleVerify} loading={verifying} disabled={verifying}>
+                    Recheck Issue
+                  </Button>
                 </InlineStack>
               </BlockStack>
             </Card>
@@ -583,13 +626,16 @@ function LeakDetailModal({ leakId, open, onClose, onStatusUpdate, currency }) {
 // Shown for PRODUCT and DATA_QUALITY leaks — fetches live Shopify data.
 // Follows the exact full-page pattern of OrderProfitabilityDetailView.
 // ---------------------------------------------------------------------------
-function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
+function ProductReviewPage({ leakId, currency, shop, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [updating, setUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState("");
-  const [updateSuccess, setUpdateSuccess] = useState("");
+  const [verification, setVerification] = useState(null);
+  const [verificationError, setVerificationError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [openingShopify, setOpeningShopify] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const shopifyOpenedRef = useRef(false);
 
   const fetchReviewData = useCallback(async (id) => {
     setLoading(true);
@@ -612,32 +658,55 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
     if (leakId) fetchReviewData(leakId);
   }, [leakId, fetchReviewData]);
 
-  async function handleStatusUpdate(newStatus) {
-    if (!data?.leak?._id) return;
-    setUpdating(true);
-    setUpdateError("");
-    setUpdateSuccess("");
+  useEffect(() => {
+    setImageFailed(false);
+  }, [data?.product?.image, data?.product?.id]);
+
+  const verifyIssue = useCallback(async () => {
+    if (!leakId || verifying) return;
+    setVerifying(true);
+    setVerificationError("");
     try {
-      const res = await fetch(`/api/profit-leaks/${data.leak._id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const res = await fetch(`/api/profit-leaks/${leakId}/verify`);
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.message || "Failed to update status");
+        throw new Error(json.message || "Unable to verify the latest product data.");
       }
-      setUpdateSuccess(`Status successfully marked as ${newStatus}`);
-      setData((prev) => ({ ...prev, leak: { ...prev.leak, status: newStatus } }));
-      if (onStatusUpdate) onStatusUpdate();
+      setVerification(json);
+      setData((prev) => ({
+        ...prev,
+        leak: {
+          ...prev.leak,
+          status: json.status,
+          resolvedAt: json.status === "RESOLVED" ? json.checkedAt : prev.leak.resolvedAt,
+        },
+      }));
+      await fetchReviewData(leakId);
     } catch (err) {
-      setUpdateError(err.message);
+      setVerificationError(err.message);
     } finally {
-      setUpdating(false);
+      setVerifying(false);
     }
-  }
+  }, [fetchReviewData, leakId, verifying]);
 
-  const { leak, product, storeCosts, currency: dataCurrency, focusedVariantId } = data || {};
+  useEffect(() => {
+    const handleReturn = () => {
+      if (shopifyOpenedRef.current && document.visibilityState === "visible") {
+        shopifyOpenedRef.current = false;
+        setOpeningShopify(false);
+        verifyIssue();
+      }
+    };
+
+    window.addEventListener("focus", handleReturn);
+    document.addEventListener("visibilitychange", handleReturn);
+    return () => {
+      window.removeEventListener("focus", handleReturn);
+      document.removeEventListener("visibilitychange", handleReturn);
+    };
+  }, [verifyIssue]);
+
+  const { leak, product, storeCosts, currency: dataCurrency, focusedVariantId, reviewMetrics } = data || {};
   const effectiveCurrency = dataCurrency || currency || "USD";
 
   const focusedVariant = product?.variants?.find((v) => v.id === focusedVariantId);
@@ -648,10 +717,13 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
 
   function flagReason(detectionRule) {
     switch (detectionRule) {
+      case "PRODUCT_BELOW_COST":
       case "PRODUCT_NEGATIVE_MARGIN":
         return "This product is selling below its cost price — every unit sold creates a direct loss.";
+      case "PRODUCT_NEGATIVE_PROFIT":
+        return "This product's net profit is negative after shipping, fulfillment, payment, and advertising costs.";
       case "PRODUCT_LOW_MARGIN":
-        return "This product's margin is critically low (under 10%), leaving no buffer to cover shipping, payment fees, or marketing spend.";
+        return `This product is profitable, but its current net margin of ${reviewMetrics?.currentData?.margin ?? "—"}% is below your target of ${storeCosts?.targetMargin || 20}%.`;
       case "PRODUCT_MISSING_COGS":
         return "No cost per item is configured for this product in Shopify. Without a cost, profit and margin cannot be verified — losses may be going undetected.";
       default:
@@ -662,12 +734,15 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
   function getRecommendation(detectionRule, variant) {
     if (leak?.metadata?.recommendation) return leak.metadata.recommendation;
     switch (detectionRule) {
+      case "PRODUCT_BELOW_COST":
       case "PRODUCT_NEGATIVE_MARGIN":
         return `Review the selling price and consider raising it above the product cost (${
           variant ? formatMoney(variant.cost, effectiveCurrency) : "your COGS"
         }) in Shopify Admin to turn a profit on every unit sold.`;
+      case "PRODUCT_NEGATIVE_PROFIT":
+        return "Increase the selling price or reduce configured operating costs in Shopify so the product generates positive net profit.";
       case "PRODUCT_LOW_MARGIN":
-        return "Consider increasing the selling price in Shopify Admin or negotiating a lower supplier cost to bring gross margin above 20% to safely cover shipping and operational fees.";
+        return `Increase the selling price in Shopify Admin or reduce costs to bring net margin above ${storeCosts?.targetMargin || 20}%.`;
       case "PRODUCT_MISSING_COGS":
         return "Add a cost per item to this product in Shopify Admin under Inventory → Cost per item. This enables accurate profit tracking across all MarginMind reports.";
       default:
@@ -701,7 +776,7 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
     );
   }
 
-  const variantPrice = displayVariant?.price ?? 0;
+  const variantPrice = reviewMetrics?.currentData?.sellingPrice ?? displayVariant?.price ?? 0;
   const paymentFees = storeCosts
     ? Number(
         (
@@ -730,16 +805,34 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
           ).toFixed(2)
         )
       : null;
-  const netProfit =
-    totalAppliedCosts !== null ? Number((variantPrice - totalAppliedCosts).toFixed(2)) : null;
+  const netProfit = reviewMetrics?.currentData?.unitProfit ??
+    (totalAppliedCosts !== null ? Number((variantPrice - totalAppliedCosts).toFixed(2)) : null);
   const netMargin =
-    netProfit !== null && variantPrice > 0
+    reviewMetrics?.currentData?.margin ??
+    (netProfit !== null && variantPrice > 0
       ? Number(((netProfit / variantPrice) * 100).toFixed(2))
-      : null;
+      : null);
 
   const productAdminUrl =
     product?.adminUrl ||
-    (shop && product?.numericId ? `https://${shop}/admin/products/${product.numericId}` : null);
+    (shop && product?.numericId
+      ? `https://admin.shopify.com/store/${shop.replace(/\.myshopify\.com$/, "")}/products/${product.numericId}`
+      : null);
+
+  function openShopifyProduct() {
+    if (!productAdminUrl) return;
+    shopifyOpenedRef.current = true;
+    setOpeningShopify(true);
+    window.open(productAdminUrl, "_blank", "noopener,noreferrer");
+  }
+
+  const productImage =
+    product?.image || product?.variants?.find((variant) => variant.image)?.image || null;
+  const productImageAlt =
+    product?.imageAlt ||
+    product?.variants?.find((variant) => variant.image)?.imageAlt ||
+    product?.title ||
+    "Product image";
 
   const pageTitle = product?.title
     ? `Product Price Review: ${product.title}`
@@ -792,8 +885,9 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
       primaryAction={
         productAdminUrl
           ? {
-              content: "Open Product in Shopify Admin ↗",
-              onAction: () => window.open(productAdminUrl, "_blank", "noopener,noreferrer"),
+              content: "Fix in Shopify",
+              onAction: openShopifyProduct,
+              loading: openingShopify,
             }
           : undefined
       }
@@ -806,28 +900,63 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
         },
       ]}
     >
-      <BlockStack gap="400">
-        {updateError && (
-          <Banner tone="critical" title="Status update failed" onDismiss={() => setUpdateError("")}>
-            <p>{updateError}</p>
+      <BlockStack gap="300">
+        {verificationError && (
+          <Banner
+            tone="critical"
+            title="Unable to verify the latest product data."
+            onDismiss={() => setVerificationError("")}
+          >
+            <p>{verificationError}</p>
+            <Button onClick={verifyIssue} loading={verifying}>Try Again</Button>
           </Banner>
         )}
-        {updateSuccess && (
-          <Banner tone="success" title="Success" onDismiss={() => setUpdateSuccess("")}>
-            <p>{updateSuccess}</p>
+        {verifying && (
+          <Banner title="Checking your latest Shopify data...">
+            <Spinner size="small" accessibilityLabel="Checking updated data" />
+          </Banner>
+        )}
+        {openingShopify && !verifying && (
+          <Banner title="Opening Shopify Admin..." />
+        )}
+        {verification?.resolved && (
+          <Banner tone="success" title="Issue resolved">
+            <p>The underlying data has been updated and this profit leak is no longer detected.</p>
+            <p>Status: RESOLVED</p>
+            <p>Resolved at: {formatDate(verification.checkedAt)}</p>
+          </Banner>
+        )}
+        {verification && !verification.resolved && !verifying && (
+          <Banner tone="warning" title="Still detected">
+            <p>{verification.message}</p>
+            <p>The current product data still meets the leak detection condition.</p>
           </Banner>
         )}
 
         {/* ── Product Header & Summary Card ── */}
-        <Card padding="400">
-          <BlockStack gap="300">
+        <Card padding="300">
+          <BlockStack gap="200">
             <InlineStack align="space-between" blockAlign="center" wrap>
               <InlineStack gap="300" blockAlign="center">
-                <Thumbnail
-                  source={product?.image || ImageIcon}
-                  alt={product?.imageAlt || product?.title || "Product image"}
-                  size="large"
-                />
+                {productImage && !imageFailed ? (
+                  <img
+                    src={productImage}
+                    alt={productImageAlt}
+                    width="64"
+                    height="64"
+                    onError={() => setImageFailed(true)}
+                    style={{
+                      display: "block",
+                      width: "64px",
+                      height: "64px",
+                      objectFit: "cover",
+                      borderRadius: "8px",
+                      border: "1px solid #e1e3e5",
+                    }}
+                  />
+                ) : (
+                  <Thumbnail source={ImageIcon} alt={productImageAlt} size="large" />
+                )}
                 <BlockStack gap="050">
                   <Text as="h1" variant="headingLg" fontWeight="bold">
                     {product?.title || leak?.resourceName || "Unknown Product"}
@@ -864,19 +993,19 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
             <Divider />
 
             {/* ── 4 Key Highlight Metrics ── */}
-            <InlineGrid columns={{ xs: 2, sm: 2, md: 4 }} gap="200">
-              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+            <InlineGrid columns={{ xs: 2, sm: 2, md: 4 }} gap="150">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack gap="050">
                   <Text variant="headingXs" tone="subdued" as="span">
                     SELLING PRICE
                   </Text>
                   <Text variant="headingLg" fontWeight="bold" as="p">
-                    {formatMoney(displayVariant?.price, effectiveCurrency)}
+                    {formatMoney(variantPrice, effectiveCurrency)}
                   </Text>
                 </BlockStack>
               </Box>
 
-              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack gap="050">
                   <Text variant="headingXs" tone="subdued" as="span">
                     PRODUCT COST (COGS)
@@ -894,50 +1023,50 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
                 </BlockStack>
               </Box>
 
-              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack gap="050">
                   <Text variant="headingXs" tone="subdued" as="span">
-                    UNIT PROFIT
+                    NET PROFIT
                   </Text>
                   <Text
                     variant="headingLg"
                     fontWeight="bold"
                     tone={
-                      displayVariant?.unitProfit !== null && displayVariant?.unitProfit < 0
+                      netProfit !== null && netProfit < 0
                         ? "critical"
-                        : displayVariant?.unitProfit !== null
+                        : netProfit !== null
                         ? "success"
                         : undefined
                     }
                     as="p"
                   >
-                    {displayVariant?.unitProfit !== null
-                      ? formatMoney(displayVariant?.unitProfit, effectiveCurrency)
+                    {netProfit !== null
+                      ? formatMoney(netProfit, effectiveCurrency)
                       : "—"}
                   </Text>
                 </BlockStack>
               </Box>
 
-              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack gap="050">
                   <Text variant="headingXs" tone="subdued" as="span">
-                    GROSS MARGIN
+                    NET MARGIN
                   </Text>
                   <Text
                     variant="headingLg"
                     fontWeight="bold"
                     tone={
-                      displayVariant?.unitMargin !== null && displayVariant?.unitMargin < 0
+                      netMargin !== null && netMargin < 0
                         ? "critical"
-                        : displayVariant?.unitMargin !== null && displayVariant?.unitMargin < 10
+                        : netMargin !== null && netMargin < (storeCosts?.targetMargin || 20)
                         ? "warning"
-                        : displayVariant?.unitMargin !== null
+                        : netMargin !== null
                         ? "success"
                         : undefined
                     }
                     as="p"
                   >
-                    {displayVariant?.unitMargin !== null ? `${displayVariant.unitMargin}%` : "—"}
+                    {netMargin !== null ? `${netMargin}%` : "—"}
                   </Text>
                 </BlockStack>
               </Box>
@@ -946,24 +1075,22 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
         </Card>
 
         {/* ── Flag Reason Banner ── */}
-        <Banner
-          tone={
-            leak?.severity === "CRITICAL"
-              ? "critical"
-              : leak?.severity === "WARNING"
-              ? "warning"
-              : "info"
-          }
-          title="Why this product was flagged"
-        >
-          <p>{flagReason(leak?.detectionRule)}</p>
-        </Banner>
+        <Card padding="300">
+          <BlockStack gap="100">
+            <Text as="h2" variant="headingSm" fontWeight="bold">
+              Why this product was flagged
+            </Text>
+            <Text as="p" variant="bodySm">
+              {flagReason(leak?.detectionRule)}
+            </Text>
+          </BlockStack>
+        </Card>
 
         {/* ── Side-by-side: Applicable Costs & Net Profitability ── */}
-        <InlineGrid columns={{ xs: 1, md: 2 }} gap="300">
+        <InlineGrid columns={{ xs: 1, md: 2 }} gap="200">
           {/* Applicable Costs */}
-          <Card padding="400">
-            <BlockStack gap="250">
+          <Card padding="300">
+            <BlockStack gap="200">
               <Text as="h2" variant="headingMd">
                 Applicable Costs (per unit)
               </Text>
@@ -981,18 +1108,18 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
               <DetailRow
                 label="Shipping Cost"
                 value={
-                  storeCosts?.shippingCost > 0
+                  storeCosts?.shippingCost !== null && storeCosts?.shippingCost !== undefined
                     ? formatMoney(storeCosts.shippingCost, effectiveCurrency)
-                    : "$0.00"
+                    : "Not configured"
                 }
                 source="Store Profile"
               />
               <DetailRow
                 label="Fulfillment Cost"
                 value={
-                  storeCosts?.fulfillmentCost > 0
+                  storeCosts?.fulfillmentCost !== null && storeCosts?.fulfillmentCost !== undefined
                     ? formatMoney(storeCosts.fulfillmentCost, effectiveCurrency)
-                    : "$0.00"
+                    : "Not configured"
                 }
                 source="Store Profile"
               />
@@ -1002,12 +1129,12 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
                     ? ` + ${formatMoney(storeCosts.paymentFeeFlat, effectiveCurrency)}`
                     : ""
                 })`}
-                value={paymentFees !== null ? formatMoney(paymentFees, effectiveCurrency) : "$0.00"}
+                value={paymentFees !== null ? formatMoney(paymentFees, effectiveCurrency) : "Not available"}
                 source="Calculated"
               />
               <DetailRow
                 label={`Advertising (${storeCosts?.advertisingCostRate || 0}%)`}
-                value={advertisingCost !== null ? formatMoney(advertisingCost, effectiveCurrency) : "$0.00"}
+                value={advertisingCost !== null ? formatMoney(advertisingCost, effectiveCurrency) : "Not configured"}
                 source="Store Profile"
               />
               <Divider />
@@ -1025,17 +1152,16 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
           </Card>
 
           {/* Net Profitability */}
-          <Card padding="400">
-            <BlockStack gap="250">
+          <Card padding="300">
+            <BlockStack gap="200">
               <Text as="h2" variant="headingMd">
                 Net Profitability &amp; Recommendation
               </Text>
               <Divider />
               {netProfit !== null ? (
-                <InlineGrid columns={2} gap="200">
+                <InlineGrid columns={2} gap="150">
                   <Box
-                    padding="300"
-                    background={netProfit < 0 ? "bg-fill-critical-secondary" : "bg-fill-success-secondary"}
+                    padding="200"
                     borderRadius="200"
                   >
                     <BlockStack gap="100">
@@ -1053,14 +1179,7 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
                     </BlockStack>
                   </Box>
                   <Box
-                    padding="300"
-                    background={
-                      netMargin < 0
-                        ? "bg-fill-critical-secondary"
-                        : netMargin < 10
-                        ? "bg-fill-warning-secondary"
-                        : "bg-fill-success-secondary"
-                    }
+                    padding="200"
                     borderRadius="200"
                   >
                     <BlockStack gap="100">
@@ -1079,17 +1198,17 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
                   </Box>
                 </InlineGrid>
               ) : (
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+                <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                   <Text variant="bodySm" tone="subdued" as="p">
                     Net profit calculation requires product cost (COGS) to be configured in Shopify Admin.
                   </Text>
                 </Box>
               )}
               <Divider />
-              <Box padding="300" background="bg-surface-secondary" borderRadius="200">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack gap="100">
                   <Text as="h3" variant="headingSm" fontWeight="bold">
-                    💡 Merchant Recommendation
+                    How to Fix It
                   </Text>
                   <Text variant="bodyMd" as="p">
                     {getRecommendation(leak?.detectionRule, displayVariant)}
@@ -1102,8 +1221,8 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
 
         {/* ── Product Variants Table ── */}
         {product?.variants && product.variants.length > 0 && (
-          <Card padding="400">
-            <BlockStack gap="200">
+          <Card padding="300">
+            <BlockStack gap="150">
               <InlineStack align="space-between" blockAlign="center">
                 <Text as="h2" variant="headingMd">
                   Product Variants ({product.variants.length})
@@ -1217,52 +1336,60 @@ function ProductReviewPage({ leakId, currency, shop, onBack, onStatusUpdate }) {
           </Card>
         )}
 
-        {/* ── Status Actions ── */}
-        <Card padding="400">
-          <BlockStack gap="250">
+        {/* ── How to Fix This ── */}
+        <Card padding="300">
+          <BlockStack gap="200">
             <InlineStack align="space-between" blockAlign="center" wrap>
               <Text as="h2" variant="headingMd">
-                Manual Price Review Actions
+                How to Fix This
               </Text>
               <InlineStack gap="150" blockAlign="center">
-                <Text variant="bodySm" tone="subdued" as="span">Current Status:</Text>
+                <Text variant="bodySm" as="span">Current Status:</Text>
                 <Badge tone={statusTone(leak?.status)}>{leak?.status}</Badge>
               </InlineStack>
             </InlineStack>
             <Divider />
-            <Text variant="bodySm" tone="subdued" as="p">
-              Review workflow: Click &quot;Open Product in Shopify Admin ↗&quot; above to adjust prices or cost per item in Shopify. Once verified or updated, mark this issue as resolved. MarginMind will not change prices automatically.
-            </Text>
-            <InlineStack gap="200" wrap>
-              <Button
-                variant={leak?.status === "RESOLVED" ? "primary" : "secondary"}
-                tone="success"
-                disabled={leak?.status === "RESOLVED" || updating}
-                loading={updating && leak?.status !== "RESOLVED"}
-                onClick={() => handleStatusUpdate("RESOLVED")}
-              >
-                ✓ Mark as Reviewed &amp; Resolved
-              </Button>
-              <Button
-                variant={leak?.status === "IGNORED" ? "primary" : "secondary"}
-                disabled={leak?.status === "IGNORED" || updating}
-                loading={updating && leak?.status !== "IGNORED"}
-                onClick={() => handleStatusUpdate("IGNORED")}
-              >
-                Skip / Ignore for Now
-              </Button>
-              {leak?.status !== "OPEN" && (
-                <Button
-                  variant="secondary"
-                  tone="critical"
-                  disabled={updating}
-                  loading={updating && leak?.status === "OPEN"}
-                  onClick={() => handleStatusUpdate("OPEN")}
-                >
-                  Reopen Issue
+            <BlockStack gap="200">
+              <Text as="p" variant="bodySm">
+                {flagReason(leak?.detectionRule)}
+              </Text>
+              <InlineGrid columns={{ xs: 1, sm: 3 }} gap="200">
+                <BlockStack gap="050">
+                  <Text variant="headingXs" as="span">CURRENT</Text>
+                  <Text as="span">Selling Price: {formatMoney(displayVariant?.price, effectiveCurrency)}</Text>
+                  <Text as="span">Product Cost: {displayVariant?.cost !== null ? formatMoney(displayVariant?.cost, effectiveCurrency) : "Not set"}</Text>
+                  <Text as="span">Net Profit: {netProfit !== null ? formatMoney(netProfit, effectiveCurrency) : "—"}</Text>
+                  <Text as="span">Current Margin: {netMargin !== null ? `${netMargin}%` : "—"}</Text>
+                </BlockStack>
+                <BlockStack gap="050">
+                  <Text variant="headingXs" as="span">TARGET</Text>
+                  <Text as="span">
+                    {leak?.detectionRule === "PRODUCT_LOW_MARGIN"
+                      ? `Minimum Margin: ${storeCosts?.targetMargin || 20}%`
+                      : leak?.detectionRule === "PRODUCT_MISSING_COGS"
+                      ? "Cost per item: configured"
+                      : "Selling price above product cost"}
+                  </Text>
+                  {reviewMetrics?.currentData?.referencePrice && (
+                    <Text as="span">
+                      Reference Price: {formatMoney(reviewMetrics.currentData.referencePrice, effectiveCurrency)}
+                    </Text>
+                  )}
+                </BlockStack>
+                <BlockStack gap="050">
+                  <Text variant="headingXs" as="span">ACTION</Text>
+                  <Text as="span">Edit the underlying product data in Shopify Admin.</Text>
+                </BlockStack>
+              </InlineGrid>
+              <InlineStack gap="200" wrap>
+                <Button variant="primary" onClick={openShopifyProduct} disabled={!productAdminUrl} loading={openingShopify}>
+                  Fix in Shopify
                 </Button>
-              )}
-            </InlineStack>
+                <Button onClick={verifyIssue} loading={verifying} disabled={verifying}>
+                  Recheck Issue
+                </Button>
+              </InlineStack>
+            </BlockStack>
           </BlockStack>
         </Card>
       </BlockStack>
@@ -1582,9 +1709,6 @@ export default function ProfitLeakDetector({
         currency={currency}
         shop={shop}
         onBack={closeReviewPage}
-        onStatusUpdate={() => {
-          onStatusUpdated();
-        }}
       />
     );
   }
@@ -1643,7 +1767,7 @@ export default function ProfitLeakDetector({
         )}
 
         {/* Summary Cards */}
-        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="300">
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 5 }} gap="300">
           <SummaryCard
             title="Total Open Leaks"
             value={summaryLoading ? "…" : summary?.totalLeaks ?? "—"}
@@ -1673,6 +1797,12 @@ export default function ProfitLeakDetector({
             value={summaryLoading ? "…" : summary?.warningLeaks ?? "—"}
             tone="warning"
             subtitle="Medium-priority issues"
+          />
+          <SummaryCard
+            title="Resolved Leaks"
+            value={summaryLoading ? "…" : summary?.totalResolved ?? "—"}
+            tone="success"
+            subtitle="Issues fixed and verified"
           />
         </InlineGrid>
 

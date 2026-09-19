@@ -25,13 +25,13 @@ import {
 // ---------------------------------------------------------------------------
 // Format Helpers
 // ---------------------------------------------------------------------------
-function formatMoney(value, currency = "USD") {
-  if (value === null || value === undefined) {
+function formatMoney(value, currency) {
+  if (value === null || value === undefined || !currency) {
     return "—";
   }
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: currency || "USD",
+    currency,
     maximumFractionDigits: 2,
   }).format(Number(value));
 }
@@ -124,7 +124,7 @@ function exportOrdersToCsv(orders, shop) {
 // ---------------------------------------------------------------------------
 // Method Detail Sub-View
 // ---------------------------------------------------------------------------
-function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetry, loading }) {
+function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetry, loading, currency }) {
   const [detailSearch, setDetailSearch] = useState("");
   const [detailPage, setDetailPage] = useState(1);
   const itemsPerPage = 10;
@@ -174,7 +174,7 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
   return (
     <Page
       title={method.shippingMethod}
-      subtitle={`${method.orders} total orders · GMV: ${formatMoney(method.revenue)} · Real Shopify Data`}
+      subtitle={`${method.orders} total orders · GMV: ${formatMoney(method.revenue, currency)} · Real Shopify Data`}
       backAction={{ content: "Shipping Cost Analysis", onAction: onBack }}
       primaryAction={{
         content: "Refresh Data",
@@ -202,6 +202,7 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
               </InlineStack>
               <Text variant="heading2xl" fontWeight="bold" as="p">
                 {formatMoney(method.revenue)}
+                              {formatMoney(method.revenue, currency)}
               </Text>
               <Text variant="bodyXs" tone="subdued" as="span">
                 Gross merchandise volume
@@ -220,7 +221,8 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
                 </Badge>
               </InlineStack>
               <Text variant="heading2xl" fontWeight="bold" as="p">
-                {formatMoney(method.shippingCharged)}
+                {formatMoney(method.shippingCharged, currency)}
+                              {formatMoney(method.shippingCharged, currency)}
               </Text>
               <Text variant="bodyXs" tone="subdued" as="span">
                 Collected directly at checkout
@@ -247,6 +249,7 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
                 as="p"
               >
                 {method.profit !== null ? formatMoney(method.profit) : "—"}
+                              {method.profit !== null ? formatMoney(method.profit, currency) : "—"}
               </Text>
               <Text variant="bodyXs" tone="subdued" as="span">
                 From {method.ordersWithProfit ?? 0} orders with COGS
@@ -261,7 +264,8 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
                   NET SHIPPING RECOVERY
                 </Text>
                 <Badge tone={netShippingProfit !== null && netShippingProfit < 0 ? "critical" : "info"}>
-                  {courierCostNum > 0 ? `$${courierCostNum.toFixed(2)}/order` : "No Courier Rate"}
+                  {courierCostNum > 0 ? `${formatMoney(courierCostNum)}/order` : "No Courier Rate"}
+                                  {courierCostNum > 0 ? `${formatMoney(courierCostNum, currency)}/order` : "No Courier Rate"}
                 </Badge>
               </InlineStack>
               <Text
@@ -272,8 +276,8 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
               >
                 {netShippingProfit !== null
                   ? netShippingProfit >= 0
-                    ? `+${formatMoney(netShippingProfit)}`
-                    : formatMoney(netShippingProfit)
+                    ? `+${formatMoney(netShippingProfit, currency)}`
+                    : formatMoney(netShippingProfit, currency)
                   : "—"}
               </Text>
               <Text variant="bodyXs" tone="subdued" as="span">
@@ -303,12 +307,12 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
               />
               <CompactInfoRow
                 label="Total Shipping Collected"
-                value={formatMoney(method.shippingCharged)}
+                value={formatMoney(method.shippingCharged, currency)}
                 isBold
               />
               <CompactInfoRow
                 label="Estimated Carrier Courier Expense"
-                value={estCourierExpense !== null ? formatMoney(estCourierExpense) : "Not Configured"}
+                value={estCourierExpense !== null ? formatMoney(estCourierExpense, currency) : "Not Configured"}
               />
             </BlockStack>
           </Card>
@@ -326,7 +330,7 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
                 </Text>
                 <Text as="p" variant="bodySm" tone="subdued">
                   {paidCount > 0
-                    ? ` You captured ${formatMoney(method.shippingCharged)} across ${paidCount} paid orders to offset carrier bills.`
+                    ? ` You captured ${formatMoney(method.shippingCharged, currency)} across ${paidCount} paid orders to offset carrier bills.`
                     : " Carrier delivery costs are entirely absorbed by your store for this rate. Ensure your product profit margins support free delivery."}
                 </Text>
               </BlockStack>
@@ -463,6 +467,7 @@ function ShippingCostDetailView({ method, courierCostInput, shop, onBack, onRetr
 // Main Dashboard
 // ---------------------------------------------------------------------------
 export default function ShippingCost({ initialData, initialError, actionData, shop }) {
+  const currency = initialData?.currency || null;
   const [data, setData] = useState(initialData);
   const [error, setError] = useState(initialError);
   const [searchQuery, setSearchQuery] = useState("");
@@ -634,6 +639,7 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
         method={selectedMethod}
         courierCostInput={courierRate}
         shop={shop}
+        currency={currency}
         onBack={() => setSelectedMethod(null)}
         onRetry={reloadData}
         loading={isRefreshing}
@@ -683,6 +689,7 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
               </InlineStack>
               <Text as="p" variant="heading2xl" fontWeight="bold">
                 {formatMoney(totalShippingCharged)}
+                              {formatMoney(totalShippingCharged, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 {paidOrdersCount} paid · {freeOrdersCount} free orders
@@ -717,6 +724,7 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
               </InlineStack>
               <Text as="p" variant="heading2xl" fontWeight="bold">
                 {formatMoney(totalRevenue)}
+                              {formatMoney(totalRevenue, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 Gross sales across orders
@@ -756,9 +764,9 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
               >
                 {netShippingBalance !== null
                   ? netShippingBalance >= 0
-                    ? `+${formatMoney(netShippingBalance)}`
-                    : formatMoney(netShippingBalance)
-                  : formatMoney(totalShippingCharged)}
+                    ? `+${formatMoney(netShippingBalance, currency)}`
+                    : formatMoney(netShippingBalance, currency)
+                  : formatMoney(totalShippingCharged, currency)}
               </Text>
               <Text as="span" variant="bodyXs" tone="subdued">
                 {netShippingBalance !== null
@@ -879,12 +887,12 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                   <Divider />
                   <CompactInfoRow
                     label={`Est. Carrier Bill (${totalOrders} orders)`}
-                    value={totalCourierExpense !== null ? formatMoney(totalCourierExpense) : "Set rate"}
+                    value={totalCourierExpense !== null ? formatMoney(totalCourierExpense, currency) : "Set rate"}
                     isBold
                   />
                   <CompactInfoRow
                     label="Customer Shipping Collected"
-                    value={formatMoney(totalShippingCharged)}
+                    value={formatMoney(totalShippingCharged, currency)}
                   />
                   <Divider />
                   <CompactInfoRow
@@ -892,9 +900,9 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                     value={
                       netShippingBalance !== null
                         ? netShippingBalance >= 0
-                          ? `+${formatMoney(netShippingBalance)}`
-                          : formatMoney(netShippingBalance)
-                        : "—"
+                          ? `+${formatMoney(netShippingBalance, currency)}`
+                          : formatMoney(netShippingBalance, currency)
+                        : formatMoney(totalShippingCharged, currency)
                     }
                     tone={
                       netShippingBalance !== null
@@ -908,8 +916,8 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                   {netShippingBalance !== null && (
                     <Text as="span" variant="bodyXs" tone={netShippingBalance < 0 ? "critical" : "success"}>
                       {netShippingBalance < 0
-                        ? `⚠️ Store absorbs $${(Math.abs(netShippingBalance) / (totalOrders || 1)).toFixed(2)}/order in carrier freight fees.`
-                        : `✅ Store earns $${(netShippingBalance / (totalOrders || 1)).toFixed(2)}/order net shipping profit.`}
+                        ? `Store absorbs ${formatMoney(Math.abs(netShippingBalance) / (totalOrders || 1), currency)}/order in carrier freight fees.`
+                        : `Store earns ${formatMoney(netShippingBalance / (totalOrders || 1), currency)}/order net shipping profit.`}
                     </Text>
                   )}
                 </BlockStack>
@@ -1079,7 +1087,7 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
 
                       <IndexTable.Cell>
                         <Text as="span" fontWeight="medium">
-                          {formatMoney(method.revenue)}
+                          {formatMoney(method.revenue, currency)}
                         </Text>
                       </IndexTable.Cell>
 
@@ -1089,13 +1097,13 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                           fontWeight={hasCharged ? "bold" : "regular"}
                           tone={hasCharged ? "success" : "subdued"}
                         >
-                          {hasCharged ? formatMoney(method.shippingCharged) : "Free ($0.00)"}
+                                                  {hasCharged ? formatMoney(method.shippingCharged, currency) : "Free shipping"}
                         </Text>
                       </IndexTable.Cell>
 
                       <IndexTable.Cell>
                         <Text as="span" tone="subdued">
-                          {estCourierMethodExpense !== null ? formatMoney(estCourierMethodExpense) : "—"}
+                                                  {estCourierMethodExpense !== null ? formatMoney(estCourierMethodExpense, currency) : "—"}
                         </Text>
                       </IndexTable.Cell>
 
@@ -1113,8 +1121,8 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                         >
                           {methodNetFreight !== null
                             ? methodNetFreight >= 0
-                              ? `+${formatMoney(methodNetFreight)}`
-                              : formatMoney(methodNetFreight)
+                              ? `+${formatMoney(methodNetFreight, currency)}`
+                              : formatMoney(methodNetFreight, currency)
                             : "—"}
                         </Text>
                       </IndexTable.Cell>
@@ -1221,7 +1229,7 @@ export default function ShippingCost({ initialData, initialError, actionData, sh
                           <Badge tone={order.shippingCharged > 0 ? "success" : "info"}>
                             {order.shippingCharged > 0
                               ? `Paid ${formatMoney(order.shippingCharged, order.currency)}`
-                              : "Free ($0.00)"}
+                              : "Free shipping"}
                           </Badge>
                         </IndexTable.Cell>
 

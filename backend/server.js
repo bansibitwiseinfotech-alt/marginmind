@@ -12,9 +12,9 @@ import customerProfitabilityRoutes from "./routes/customerProfitabilityRoutes.js
 import discountImpactRoutes from "./routes/discountImpact.routes.js";
 import shippingCostRoutes from "./routes/shippingCost.routes.js";
 import profitLeakRoutes from "./routes/profitLeakRoutes.js";
-
+import profitSimulatorRoutes from "./routes/profitSimulatorRoutes.js";
+import profitAlertRoutes from "./routes/profitAlertRoutes.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // Must load env before anything that reads env vars
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
@@ -47,6 +47,8 @@ app.use(
 app.use("/api/shipping-cost", shippingCostRoutes);
 app.use("/api/discount-impact", discountImpactRoutes);
 app.use("/api/profit-leaks", profitLeakRoutes);
+app.use("/api/profit-simulator", profitSimulatorRoutes);
+app.use("/api/profit-alerts", profitAlertRoutes);
 // ---------------------------------------------------------------------------
 // Cost management routes
 // ---------------------------------------------------------------------------
